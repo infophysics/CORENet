@@ -37,7 +37,7 @@ loader:
 
 training:
   iterations:   1
-  epochs:       1
+  epochs:       2
   checkpoint:   1
   progress_bar: "all"        # train, validation, test, all
   rewrite_bar:      False # wether to leave bars after each epoch

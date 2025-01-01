@@ -199,72 +199,10 @@ class Trainer:
         self.logger.info(f"training dataset '{self.meta['dataset'].name}' for {epochs} epochs.")
 
         # set up tensorboard
-        self.tensorboard_dir = self.meta['run_directory']
-        self.tensorboard = SummaryWriter(
-            log_dir=self.tensorboard_dir
+        self.meta['tensorboard_dir'] = self.meta['run_directory']
+        self.meta['tensorboard'] = SummaryWriter(
+            log_dir=self.meta['tensorboard_dir']
         )
-
-        if no_timing:
-            # TODO: Need to fix this so that memory and timing callbacks aren't called.
-            self.callbacks.callbacks['timing_callback'].no_timing = True
-            self.callbacks.callbacks['memory_callback'].no_timing = True
-            if self.meta['debug']:
-                self.__train_debug(
-                    epochs,
-                    checkpoint,
-                    progress_bar,
-                    rewrite_bar,
-                    save_predictions,
-                    skip_metrics
-                )
-            else:
-                self.__train_no_timing(
-                    epochs,
-                    checkpoint,
-                    progress_bar,
-                    rewrite_bar,
-                    save_predictions,
-                    skip_metrics
-                )
-        else:
-            self.__train_with_timing(
-                epochs,
-                checkpoint,
-                progress_bar,
-                rewrite_bar,
-                save_predictions,
-                skip_metrics
-            )
-
-    def report_failure(
-        self,
-        data,
-        outputs,
-        batch,
-        epoch,
-        step,
-        exception
-    ):
-        self.logger.error(
-            '\n****RECORDED AN ERROR IN COMPUTATION****\n' +
-            f'data:     {data}\n\n' +
-            f'outputs:  {outputs}\n' +
-            f'epoch:    {epoch}\n' +
-            f'batch:    {batch}\n' +
-            f'step:     {step}\n' +
-            f'exception:    {exception}\n' +
-            '****RECORDED AN ERROR IN COMPUTATION****\n'
-        )
-
-    def __train_with_timing(
-        self,
-        epochs:     int = 100,          # number of epochs to train
-        checkpoint: int = 10,           # epochs inbetween weight saving
-        progress_bar:   str = 'all',    # progress bar from tqdm
-        rewrite_bar:    bool = False,   # wether to leave the bars after each epoch
-        save_predictions: bool = True,  # wether to save network outputs for all events to original file
-        skip_metrics:   bool = False,   # wether to skip metrics except for testing sets.
-    ):
         """
         Training usually consists of the following steps:
             (1) Zero-out training/validation/testing losses and metrics
@@ -376,10 +314,10 @@ class Trainer:
                     if ("loss" in key):
                         if key not in epoch_train_losses:
                             epoch_train_losses[key] = []
-                        epoch_train_losses[key].append(value)
-                        self.tensorboard.add_scalar(key + '_train', value, train_iteration)
+                        epoch_train_losses[key].append(value.detach().cpu())
+                        self.meta['tensorboard'].add_scalar(key + '_train', value, train_iteration)
             for key, value in epoch_train_losses.items():
-                self.tensorboard.add_scalar(key + '_train', torch.mean(value), epoch)
+                self.meta['tensorboard'].add_scalar(key + '_train', np.mean(value), epoch)
 
             # update timing info
             self.memory_trackers.memory_trackers['epoch_training'].end()
@@ -413,6 +351,11 @@ class Trainer:
                             self.timers.timers['training_metrics'].end()
                             if (progress_bar == 'all' or progress_bar == 'train'):
                                 metrics_training_loop.set_description(f"Training Metrics: Epoch [{epoch+1}/{epochs}]")
+
+                        """Get metrics and report to tensorboard"""
+                        metrics = self.metrics.compute()
+                        for key, value in metrics.items():
+                            self.meta['tensorboard'].add_scalar(key + '_train', value, epoch)
 
             # evaluate callbacks
             self.timers.timers['training_callbacks'].start()
@@ -479,10 +422,10 @@ class Trainer:
                         if ("loss" in key):
                             if key not in epoch_val_losses:
                                 epoch_val_losses[key] = []
-                            epoch_val_losses[key].append(value)
-                            self.tensorboard.add_scalar(key + '_val', value, val_iteration)
+                            epoch_val_losses[key].append(value.detach().cpu())
+                            self.meta['tensorboard'].add_scalar(key + '_val', value, val_iteration)
                 for key, value in epoch_val_losses.items():
-                    self.tensorboard.add_scalar(key + '_val', torch.mean(value), epoch)
+                    self.meta['tensorboard'].add_scalar(key + '_val', np.mean(value), epoch)
 
                 # update timing info
                 self.memory_trackers.memory_trackers['epoch_validation'].end()
@@ -514,6 +457,11 @@ class Trainer:
                             self.timers.timers['validation_metrics'].end()
                             if (progress_bar == 'all' or progress_bar == 'validation'):
                                 metrics_validation_loop.set_description(f"Validation Metrics: Epoch [{epoch+1}/{epochs}]")
+
+                        """Get metrics and report to tensorboard"""
+                        metrics = self.metrics.compute()
+                        for key, value in metrics.items():
+                            self.meta['tensorboard'].add_scalar(key + '_val', value, epoch)
 
             # evaluate callbacks
             self.timers.timers['validation_callbacks'].start()
@@ -574,10 +522,17 @@ class Trainer:
                     if ("loss" in key):
                         if key not in test_losses:
                             test_losses[key] = []
-                        test_losses[key].append(value)
-                        self.tensorboard.add_scalar(key + '_test', value, test_iteration)
+                        test_losses[key].append(value.detach().cpu())
+                        self.meta['tensorboard'].add_scalar(key + '_test', value, test_iteration)
+
             for key, value in test_losses.items():
-                self.tensorboard.add_scalar(key + '_test', torch.mean(value), epoch)
+                self.meta['tensorboard'].add_scalar(key + '_test', torch.mean(value), epoch)
+
+            """Get metrics and report to tensorboard"""
+            if self.metrics is not None:
+                metrics = self.metrics.compute()
+                for key, value in metrics.items():
+                    self.meta['tensorboard'].add_scalar(key + '_test', value, epoch)
 
             # evaluate callbacks
             self.callbacks.evaluate_epoch(train_type='test')
@@ -590,456 +545,6 @@ class Trainer:
             self.logger.info("running inference to save predictions.")
             return self.inference(
                 dataset_type='all',
-                progress_bar=progress_bar,
-                rewrite_bar=rewrite_bar,
-                save_predictions=True,
-            )
-
-    def __train_no_timing(
-        self,
-        epochs:     int = 100,          # number of epochs to train
-        checkpoint: int = 10,           # epochs inbetween weight saving
-        progress_bar:   str = 'all',    # progress bar from tqdm
-        rewrite_bar:    bool = False,   # wether to leave the bars after each epoch
-        save_predictions: bool = True,  # wether to save network outputs for all events to original file
-        skip_metrics:   bool = False,   # wether to skip metrics except for testing sets.
-    ):
-        """
-        No comments here since the code is identical to the __train_with_timing function
-        except for the lack of calls to timers.
-        """
-        for epoch in range(epochs):
-            if (progress_bar == 'all' or progress_bar == 'train'):
-                training_loop = tqdm(
-                    enumerate(self.meta['loader'].train_loader, 0),
-                    total=len(self.meta['loader'].train_loader),
-                    leave=rewrite_bar,
-                    position=0,
-                    colour='green'
-                )
-            else:
-                training_loop = enumerate(self.meta['loader'].train_loader, 0)
-            self.model.train()
-            for ii, data in training_loop:
-                for param in self.model.parameters():
-                    param.grad = None
-                data = self.model(data)
-                data = self.criterion.loss(data)
-                data['loss'].backward()
-                self.optimizer.step()
-                if (progress_bar == 'all' or progress_bar == 'train'):
-                    training_loop.set_description(f"Training: Epoch [{epoch+1}/{epochs}]")
-                    training_loop.set_postfix_str(f"loss={data['loss'].item():.2e}")
-            self.model.eval()
-            if not skip_metrics:
-                if self.metrics is not None:
-                    if (progress_bar == 'all' or progress_bar == 'train'):
-                        metrics_training_loop = tqdm(
-                            enumerate(self.meta['loader'].train_loader, 0),
-                            total=len(self.meta['loader'].train_loader),
-                            leave=rewrite_bar,
-                            position=0,
-                            colour='green'
-                        )
-                    else:
-                        metrics_training_loop = enumerate(self.meta['loader'].train_loader, 0)
-                    self.metrics.reset_batch()
-                    for ii, data in metrics_training_loop:
-                        data = self.model(data)
-                        self.metrics.update(data, train_type="train")
-                        if (progress_bar == 'all' or progress_bar == 'train'):
-                            metrics_training_loop.set_description(f"Training Metrics: Epoch [{epoch+1}/{epochs}]")
-            self.callbacks.evaluate_epoch(train_type='train')
-            if (progress_bar == 'all' or progress_bar == 'validation'):
-                validation_loop = tqdm(
-                    enumerate(self.meta['loader'].validation_loader, 0),
-                    total=len(self.meta['loader'].validation_loader),
-                    leave=rewrite_bar,
-                    position=0,
-                    colour='blue'
-                )
-            else:
-                validation_loop = enumerate(self.meta['loader'].validation_loader, 0)
-            self.model.eval()
-            with torch.no_grad():
-                for ii, data in validation_loop:
-                    data = self.model(data)
-                    data = self.criterion.loss(data)
-                    if (progress_bar == 'all' or progress_bar == 'validation'):
-                        validation_loop.set_description(f"Validation: Epoch [{epoch+1}/{epochs}]")
-                        validation_loop.set_postfix_str(f"loss={data['loss'].item():.2e}")
-                if not skip_metrics:
-                    if self.metrics is not None:
-                        if (progress_bar == 'all' or progress_bar == 'validation'):
-                            metrics_validation_loop = tqdm(
-                                enumerate(self.meta['loader'].validation_loader, 0),
-                                total=len(self.meta['loader'].validation_loader),
-                                leave=rewrite_bar,
-                                position=0,
-                                colour='blue'
-                            )
-                        else:
-                            metrics_validation_loop = enumerate(self.meta['loader'].validation_loader, 0)
-                        self.metrics.reset_batch()
-                        for ii, data in metrics_validation_loop:
-                            data = self.model(data)
-                            self.metrics.update(data, train_type="validation")
-                            if (progress_bar == 'all' or progress_bar == 'validation'):
-                                metrics_validation_loop.set_description(f"Validation Metrics: Epoch [{epoch+1}/{epochs}]")
-            self.callbacks.evaluate_epoch(train_type='validation')
-            if epoch % checkpoint == 0:
-                self.save_checkpoint(epoch)
-        self.callbacks.evaluate_training()
-        self.logger.info("training finished.")
-        if (progress_bar == 'all' or progress_bar == 'test'):
-            test_loop = tqdm(
-                enumerate(self.meta['loader'].test_loader, 0),
-                total=len(self.meta['loader'].test_loader),
-                leave=rewrite_bar,
-                position=0,
-                colour='red'
-            )
-        else:
-            test_loop = enumerate(self.meta['loader'].test_loader, 0)
-        self.model.eval()
-        with torch.no_grad():
-            for ii, data in test_loop:
-                data = self.model(data)
-                data = self.criterion.loss(data)
-                if self.metrics is not None:
-                    self.metrics.reset_batch()
-                    self.metrics.update(data, train_type="test")
-                if (progress_bar == 'all' or progress_bar == 'test'):
-                    test_loop.set_description(f"Testing: Batch [{ii+1}/{self.meta['loader'].num_test_batches}]")
-                    test_loop.set_postfix_str(f"loss={data['loss'].item():.2e}")
-            self.callbacks.evaluate_epoch(train_type='test')
-        self.callbacks.evaluate_testing()
-        self.model.save_model(flag='trained')
-        if save_predictions:
-            self.logger.info("running inference to save predictions.")
-            return self.inference(
-                dataset_type='all',
-                progress_bar=progress_bar,
-                rewrite_bar=rewrite_bar,
-                save_predictions=True,
-            )
-
-    def __train_debug(
-        self,
-        epochs:     int = 100,          # number of epochs to train
-        checkpoint: int = 10,           # epochs inbetween weight saving
-        progress_bar:   str = 'all',    # progress bar from tqdm
-        rewrite_bar:    bool = False,   # wether to leave the bars after each epoch
-        save_predictions: bool = True,  # wether to save network outputs for all events to original file
-        skip_metrics:   bool = False,   # wether to skip metrics except for testing sets.
-    ):
-        """
-        No comments here since the code is identical to the __train_with_timing function
-        except for the lack of calls to timers.
-        """
-        for epoch in range(epochs):
-            if (progress_bar == 'all' or progress_bar == 'train'):
-                training_loop = tqdm(
-                    enumerate(self.meta['loader'].train_loader, 0),
-                    total=len(self.meta['loader'].train_loader),
-                    leave=rewrite_bar,
-                    position=0,
-                    colour='green'
-                )
-            else:
-                training_loop = enumerate(self.meta['loader'].train_loader, 0)
-            self.model.train()
-            for ii, data in training_loop:
-                for param in self.model.parameters():
-                    param.grad = None
-                try:
-                    outputs = self.model(data)
-                except Exception as exception:
-                    self.report_failure(
-                        data=data,
-                        outputs=None,
-                        batch=ii,
-                        epoch=epoch,
-                        step='training model evaluation',
-                        exception=exception
-                    )
-                try:
-                    loss = self.criterion.loss(outputs, data)
-                except Exception as exception:
-                    self.report_failure(
-                        data=data,
-                        outputs=outputs,
-                        batch=ii,
-                        epoch=epoch,
-                        step='training loss evaluation',
-                        exception=exception
-                    )
-                try:
-                    loss.backward()
-                except Exception as exception:
-                    self.report_failure(
-                        data=data,
-                        outputs=outputs,
-                        batch=ii,
-                        epoch=epoch,
-                        step='training loss backwards',
-                        exception=exception
-                    )
-                try:
-                    self.optimizer.step()
-                except Exception as exception:
-                    self.report_failure(
-                        data=data,
-                        outputs=outputs,
-                        batch=ii,
-                        epoch=epoch,
-                        step='training optimizer step',
-                        exception=exception
-                    )
-                if (progress_bar == 'all' or progress_bar == 'train'):
-                    training_loop.set_description(f"Training: Epoch [{epoch+1}/{epochs}]")
-                    training_loop.set_postfix_str(f"loss={loss.item():.2e}")
-            self.model.eval()
-            if not skip_metrics:
-                if self.metrics is not None:
-                    if (progress_bar == 'all' or progress_bar == 'train'):
-                        metrics_training_loop = tqdm(
-                            enumerate(self.meta['loader'].train_loader, 0),
-                            total=len(self.meta['loader'].train_loader),
-                            leave=rewrite_bar,
-                            position=0,
-                            colour='green'
-                        )
-                    else:
-                        metrics_training_loop = enumerate(self.meta['loader'].train_loader, 0)
-                    self.metrics.reset_batch()
-                    for ii, data in metrics_training_loop:
-                        try:
-                            outputs = self.model(data)
-                        except Exception as exception:
-                            self.report_failure(
-                                data=data,
-                                outputs=None,
-                                batch=ii,
-                                epoch=epoch,
-                                step='training model evaluation for metrics',
-                                exception=exception
-                            )
-                        try:
-                            self.metrics.update(outputs, data, train_type="train")
-                        except Exception as exception:
-                            self.report_failure(
-                                data=data,
-                                outputs=outputs,
-                                batch=ii,
-                                epoch=epoch,
-                                step='training metric evaluation',
-                                exception=exception
-                            )
-                        if (progress_bar == 'all' or progress_bar == 'train'):
-                            metrics_training_loop.set_description(f"Training Metrics: Epoch [{epoch+1}/{epochs}]")
-            try:
-                self.callbacks.evaluate_epoch(train_type='train')
-            except Exception as exception:
-                self.report_failure(
-                    data=data,
-                    outputs=outputs,
-                    batch=ii,
-                    epoch=epoch,
-                    step='training callback epoch evaluation',
-                    exception=exception
-                )
-            if (progress_bar == 'all' or progress_bar == 'validation'):
-                validation_loop = tqdm(
-                    enumerate(self.meta['loader'].validation_loader, 0),
-                    total=len(self.meta['loader'].validation_loader),
-                    leave=rewrite_bar,
-                    position=0,
-                    colour='blue'
-                )
-            else:
-                validation_loop = enumerate(self.meta['loader'].validation_loader, 0)
-            self.model.eval()
-            with torch.no_grad():
-                for ii, data in validation_loop:
-                    try:
-                        outputs = self.model(data)
-                    except Exception as exception:
-                        self.report_failure(
-                            data=data,
-                            outputs=None,
-                            batch=ii,
-                            epoch=epoch,
-                            step='validation model evaluation',
-                            exception=exception
-                        )
-                    try:
-                        loss = self.criterion.loss(outputs, data)
-                    except Exception as exception:
-                        self.report_failure(
-                            data=data,
-                            outputs=outputs,
-                            batch=ii,
-                            epoch=epoch,
-                            step='validation loss evaluation',
-                            exception=exception
-                        )
-                    if (progress_bar == 'all' or progress_bar == 'validation'):
-                        validation_loop.set_description(f"Validation: Epoch [{epoch+1}/{epochs}]")
-                        validation_loop.set_postfix_str(f"loss={loss.item():.2e}")
-                if not skip_metrics:
-                    if self.metrics is not None:
-                        if (progress_bar == 'all' or progress_bar == 'validation'):
-                            metrics_validation_loop = tqdm(
-                                enumerate(self.meta['loader'].validation_loader, 0),
-                                total=len(self.meta['loader'].validation_loader),
-                                leave=rewrite_bar,
-                                position=0,
-                                colour='blue'
-                            )
-                        else:
-                            metrics_validation_loop = enumerate(self.meta['loader'].validation_loader, 0)
-                        self.metrics.reset_batch()
-                        for ii, data in metrics_validation_loop:
-                            try:
-                                outputs = self.model(data)
-                            except Exception as exception:
-                                self.report_failure(
-                                    data=data,
-                                    outputs=None,
-                                    batch=ii,
-                                    epoch=epoch,
-                                    step='validation model evaluation for metrics',
-                                    exception=exception
-                                )
-                            try:
-                                self.metrics.update(outputs, data, train_type="train")
-                            except Exception as exception:
-                                self.report_failure(
-                                    data=data,
-                                    outputs=outputs,
-                                    batch=ii,
-                                    epoch=epoch,
-                                    step='validation metric evaluation',
-                                    exception=exception
-                                )
-                            if (progress_bar == 'all' or progress_bar == 'validation'):
-                                metrics_validation_loop.set_description(f"Validation Metrics: Epoch [{epoch+1}/{epochs}]")
-            try:
-                self.callbacks.evaluate_epoch(train_type='validation')
-            except Exception as exception:
-                self.report_failure(
-                    data=data,
-                    outputs=outputs,
-                    batch=ii,
-                    epoch=epoch,
-                    step='validation callback epoch evaluation',
-                    exception=exception
-                )
-
-            if epoch % checkpoint == 0:
-                self.save_checkpoint(epoch)
-        try:
-            self.callbacks.evaluate_training()
-        except Exception as exception:
-            self.report_failure(
-                data=data,
-                outputs=outputs,
-                batch=ii,
-                epoch=epoch,
-                step='training callback evaluation',
-                exception=exception
-            )
-        self.logger.info("training finished.")
-        if (progress_bar == 'all' or progress_bar == 'test'):
-            test_loop = tqdm(
-                enumerate(self.meta['loader'].test_loader, 0),
-                total=len(self.meta['loader'].test_loader),
-                leave=rewrite_bar,
-                position=0,
-                colour='red'
-            )
-        else:
-            test_loop = enumerate(self.meta['loader'].test_loader, 0)
-        self.model.eval()
-        with torch.no_grad():
-            for ii, data in test_loop:
-                try:
-                    outputs = self.model(data)
-                except Exception as exception:
-                    self.report_failure(
-                        data=data,
-                        outputs=None,
-                        batch=ii,
-                        epoch=-1,
-                        step='test model evaluation',
-                        exception=exception
-                    )
-                try:
-                    loss = self.criterion.loss(outputs, data)
-                except Exception as exception:
-                    self.report_failure(
-                        data=data,
-                        outputs=outputs,
-                        batch=ii,
-                        epoch=-1,
-                        step='test loss evaluation',
-                        exception=exception
-                    )
-                if self.metrics is not None:
-                    self.metrics.reset_batch()
-                    try:
-                        self.metrics.update(outputs, data, train_type="test")
-                    except Exception as exception:
-                        self.report_failure(
-                            data=data,
-                            outputs=outputs,
-                            batch=ii,
-                            epoch=epoch,
-                            step='test metric evaluation',
-                            exception=exception
-                        )
-                if (progress_bar == 'all' or progress_bar == 'test'):
-                    test_loop.set_description(f"Testing: Batch [{ii+1}/{self.meta['loader'].num_test_batches}]")
-                    test_loop.set_postfix_str(f"loss={loss.item():.2e}")
-            try:
-                self.callbacks.evaluate_epoch(train_type='test')
-            except Exception as exception:
-                self.report_failure(
-                    data=data,
-                    outputs=outputs,
-                    batch=ii,
-                    epoch=-1,
-                    step='test callback epoch evaluation',
-                    exception=exception
-                )
-        try:
-            self.callbacks.evaluate_testing()
-        except Exception as exception:
-            self.report_failure(
-                data=data,
-                outputs=outputs,
-                batch=ii,
-                epoch=-1,
-                step='test callback evaluation',
-                exception=exception
-            )
-        try:
-            self.model.save_model(flag='trained')
-        except Exception as exception:
-            self.report_failure(
-                data=None,
-                outputs=None,
-                batch=ii,
-                epoch=-1,
-                step='save model',
-                exception=exception
-            )
-        if save_predictions:
-            self.logger.info("running inference to save predictions.")
-            return self.inference(
-                dataset_type='all',
-                outputs=[output for output in self.shapes["output"].keys()],
                 progress_bar=progress_bar,
                 rewrite_bar=rewrite_bar,
                 save_predictions=True,
@@ -1114,31 +619,31 @@ class Trainer:
                 self.metrics.reset_batch()
             for ii, data in inference_loop:
                 # get the network output
-                model_output = self.model(data)
-                for jj, key in enumerate(model_output.keys()):
+                data = self.model(data)
+                for jj, key in enumerate(data.keys()):
                     if key in predictions.keys():
-                        predictions[key].append([model_output[key].cpu().numpy()])
+                        predictions[key].append([data[key].cpu().numpy()])
                 for jj, key in enumerate(layers):
                     if key in predictions.keys():
                         predictions[key].append([self.model.forward_views[key].cpu().numpy()])
                 # compute loss
                 if self.criterion is not None:
-                    loss = self.criterion.loss(model_output, data)
+                    data = self.criterion.loss(data)
 
                 # update metrics
                 if not skip_metrics:
                     if self.metrics is not None:
-                        self.metrics.update(model_output, data, train_type="inference")
+                        self.metrics.update(data, train_type="inference")
 
                 # update progress bar
                 if (progress_bar is True):
                     inference_loop.set_description(f"Inference: Batch [{ii+1}/{num_batches}]")
-                    inference_loop.set_postfix_str(f"loss={loss.item():.2e}")
+                    inference_loop.set_postfix_str(f"loss={data['loss'].item():.2e}")
         for key in predictions.keys():
             predictions[key] = np.vstack(np.array(predictions[key], dtype=object))
         # save predictions if wanted
         if save_predictions:
-            self.meta['dataset'].append_dataset_files(
+            self.meta['dataset'].save_predictions(
                 self.model.name + "_predictions",
                 predictions,
                 np.array(inference_indices, dtype=object)

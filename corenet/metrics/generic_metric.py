@@ -20,20 +20,12 @@ class GenericMetric:
     def __init__(
         self,
         name:           str = 'generic',
-        target_type:        str = 'classes',
         when_to_compute:    str = 'all',
-        targets:        list = [],
-        outputs:        list = [],
-        augmentations:  int = 0,
         meta:           dict = {}
     ):
         self.name = name
         self.logger = Logger(self.name, output="both", file_mode="w")
-        self.target_type = target_type
         self.when_to_compute = when_to_compute
-        self.targets = targets
-        self.outputs = outputs
-        self.augmentations = augmentations
         self.meta = meta
         if "device" in self.meta:
             self.device = self.meta['device']

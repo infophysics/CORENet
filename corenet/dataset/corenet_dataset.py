@@ -36,7 +36,7 @@ class CORENetDataset(Dataset):
         self.process_config()
 
     def process_config(self):
-        self.num_events = 1
+        self.num_events = 10
         self.gut_test = self.config['gut_test']
         self.gut_true = self.config['gut_true']
         self.weak_test = self.config['weak_test']
@@ -50,3 +50,11 @@ class CORENetDataset(Dataset):
             'gut_true': torch.Tensor([0, 1, 2, 3, 4]),
             'weak_test': torch.Tensor([0, 1, 2, 3])
         }
+
+    def save_predictions(
+        self,
+        model_name,
+        predictions,
+        indices
+    ):
+        pass

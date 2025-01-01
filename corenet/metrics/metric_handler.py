@@ -175,13 +175,12 @@ class MetricHandler:
 
     def update(
         self,
-        outputs,
         data,
         train_type: str = 'all',
     ):
         for name, metric in self.metrics.items():
             if train_type == metric.when_to_compute or metric.when_to_compute == 'all':
-                metric.update(outputs, data)
+                metric.update(data)
 
     def compute(
         self,
