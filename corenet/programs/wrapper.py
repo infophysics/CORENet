@@ -8,7 +8,6 @@ from corenet.module import ModuleHandler
 
 import torch
 import os
-import shutil
 os.environ["TQDM_NOTEBOOK"] = "false"
 
 
@@ -65,24 +64,9 @@ class CORENetRunner:
         if "module" not in self.config.keys():
             self.logger.error('"module" section not specified in config!')
 
-        self.set_up_directories()
         self.set_up_meta()
         self.set_up_devices()
         self.set_up_modules()
-
-    def set_up_directories(self):
-        # create .tmp and .backup directories
-        if not os.path.isdir(f"{self.local_scratch}/.backup"):
-            os.makedirs(f"{self.local_scratch}/.backup")
-        if os.path.isdir(f"{self.local_scratch}/.backup/.tmp"):
-            shutil.rmtree(f"{self.local_scratch}/.backup/.tmp")
-        if os.path.isdir(f"{self.local_scratch}/.tmp"):
-            shutil.move(
-                f"{self.local_scratch}/.tmp/",
-                f"{self.local_scratch}/.backup/"
-            )
-            self.logger.info("copied old .tmp to .backup in local_scratch directory.")
-        os.makedirs(f"{self.local_scratch}/.tmp")
 
     def set_up_meta(self):
         self.logger.info("configuring meta...")
@@ -104,12 +88,18 @@ class CORENetRunner:
         if not os.path.isdir(self.local_run):
             os.makedirs(self.local_run)
 
+        # create plots directory
+        self.local_plots = self.local_run + '/plots/'
+        if not os.path.isdir(self.local_plots):
+            os.makedirs(self.local_plots)
+
         self.meta = {
             'system_info':      system_info,
             'now':              now,
             'run_name':         self.run_name,
             'config_file':      self.config_file,
             'run_directory':    self.local_run,
+            'plot_directory':   self.local_plots,
             'local_scratch':    self.local_scratch,
             'local_corenet':       self.local_corenet,
             'local_data':       self.local_data,

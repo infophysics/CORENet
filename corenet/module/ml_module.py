@@ -14,7 +14,6 @@ from corenet.optimizers import Optimizer
 from corenet.metrics import MetricHandler
 from corenet.trainer import Trainer
 from corenet.utils.callbacks import CallbackHandler
-from corenet.utils.utils import flatten_dict, generate_combinations_from_arrays, tar_directory
 
 
 class MachineLearningModule(GenericModule):
@@ -55,19 +54,13 @@ class MachineLearningModule(GenericModule):
         self.meta['model_analyzer'] = None
 
         self.parse_inference()
-        self.parse_hyper_parameters()
-        self.parse_linear_evaluation()
-        self.parse_model_analyzer()
 
     def check_config(self):
         if "model" not in self.config.keys():
             self.logger.warning('"model" section not specified in config!')
 
         if (
-            self.mode == "training" or
-            self.mode == "contrastive_training" or
-            self.mode == "hyper_parameter_scan" or
-            self.mode == "contrastive_hyper_parameter_scan"
+            self.mode == "training"
         ):
             if "criterion" not in self.config.keys():
                 self.logger.error('"criterion" section not specified in config!')
@@ -84,25 +77,8 @@ class MachineLearningModule(GenericModule):
             if "inference" not in self.config.keys():
                 self.logger.error('"inference" section not specified in config!')
 
-        if self.mode == "hyper_parameter_scan" or self.mode == "contrastive_hyper_parameter_scan":
-            if "hyper_parameters" not in self.config.keys():
-                self.logger.error('"hyper_parameters" section not specified in config!')
-
-        if (
-            self.mode == "linear_evaluation" or
-            self.mode == "contrastive_training" or
-            self.mode == "contrastive_hyper_parameter_scan"
-        ):
-            if "linear_evaluation" not in self.config.keys():
-                self.logger.error("'linear_evaluation' section not specified in config!")
-
-        if self.mode == "model_analyzer":
-            if "model_analyzer" not in self.config.keys():
-                self.logger.error("'model_analyzer' section not specified in config!")
-
     def parse_model(
         self,
-        name:   str = ''
     ):
         """
         """
@@ -114,14 +90,13 @@ class MachineLearningModule(GenericModule):
         self.logger.info("configuring model.")
         model_config = self.config["model"]
         self.meta['model'] = ModelHandler(
-            self.name + name,
+            self.name,
             model_config,
             meta=self.meta
         )
 
     def parse_loss(
         self,
-        name:   str = ''
     ):
         """
         """
@@ -132,14 +107,13 @@ class MachineLearningModule(GenericModule):
         criterion_config = self.config['criterion']
         # add in class weight numbers for loss functions
         self.meta['criterion'] = LossHandler(
-            self.name + name,
+            self.name,
             criterion_config,
             meta=self.meta
         )
 
     def parse_optimizer(
         self,
-        name:   str = ''
     ):
         """
         """
@@ -151,14 +125,13 @@ class MachineLearningModule(GenericModule):
         self.logger.info("configuring optimizer.")
         optimizer_config = self.config['optimizer']
         self.meta['optimizer'] = Optimizer(
-            self.name + name,
+            self.name,
             optimizer_config,
             meta=self.meta,
         )
 
     def parse_metrics(
         self,
-        name:   str = ''
     ):
         """
         """
@@ -168,14 +141,13 @@ class MachineLearningModule(GenericModule):
         self.logger.info("configuring metrics.")
         metrics_config = self.config['metrics']
         self.meta['metrics'] = MetricHandler(
-            self.name + name,
+            self.name,
             metrics_config,
             meta=self.meta
         )
 
     def parse_callbacks(
         self,
-        name:   str = ''
     ):
         """
         """
@@ -193,14 +165,13 @@ class MachineLearningModule(GenericModule):
                 callbacks_config[callback]['criterion_handler'] = self.meta['criterion']
                 callbacks_config[callback]['metrics_handler'] = self.meta['metrics']
         self.meta['callbacks'] = CallbackHandler(
-            self.name + name,
+            self.name,
             callbacks_config,
             meta=self.meta
         )
 
     def parse_training(
         self,
-        name:   str = ''
     ):
         """
         """
@@ -209,19 +180,14 @@ class MachineLearningModule(GenericModule):
             return
         self.logger.info("configuring training.")
         training_config = self.config['training']
-        if "iterations" not in self.config['training'].keys():
-            self.config['training']['iterations'] = 1
-        if self.mode == "linear_evaluation":
-            return
         self.meta['trainer'] = Trainer(
-            self.name + name,
+            self.name,
             training_config,
             meta=self.meta,
         )
 
     def parse_inference(
         self,
-        name:   str = ''
     ):
         if "inference" not in self.config.keys():
             self.logger.warn("no inference in config file.")
@@ -230,7 +196,7 @@ class MachineLearningModule(GenericModule):
         training_config = self.config['training']
         if self.meta['trainer'] is None:
             self.meta['trainer'] = Trainer(
-                self.name + name,
+                self.name,
                 training_config,
                 meta=self.meta
             )
@@ -247,123 +213,6 @@ class MachineLearningModule(GenericModule):
             for output in self.config["inference"]["outputs"]:
                 self.module_data_product[output] = None
 
-    def parse_hyper_parameters(self):
-        """
-        """
-        if "hyper_parameters" not in self.config.keys():
-            self.logger.warn("no hyper_parameters in config file.")
-            return
-        self.logger.info("configuring hyper_parameters")
-        hyper_parameters_config = self.config["hyper_parameters"]
-        model_config = self.config["model"]
-        if "iterations" not in hyper_parameters_config.keys():
-            self.logger.error("no 'iterations' specified in hyper_parameters config!")
-        if "search_type" not in hyper_parameters_config.keys():
-            self.logger.error("no 'search_type' specified in hyper_parameters config!")
-        if "model_parameters" not in hyper_parameters_config.keys():
-            self.logger.error("no 'model_parameters' specified in hyper_parameters config!")
-        self.iterations = hyper_parameters_config["iterations"]
-        self.search_type = hyper_parameters_config["search_type"]
-        self.hyper_parameters = {
-            f'iteration_{ii}': copy.deepcopy(model_config)
-            for ii in range(self.iterations)
-        }
-        # code for generating random hyper-parameters
-        if self.search_type == 'grid':
-            self.generate_grid_hyper_parameters(hyper_parameters_config)
-        elif self.search_type == 'random':
-            self.generate_random_hyper_parameters(hyper_parameters_config)
-
-    def parse_linear_evaluation(
-        self,
-        name:   str = ''
-    ):
-        if "linear_evaluation" not in self.config.keys():
-            self.logger.warn("no linear_evaluation in config file.")
-            return
-        self.logger.info("configuring linear_evaluation")
-        linear_evaluation_config = self.config["linear_evaluation"]
-        if "model_directory" in linear_evaluation_config.keys():
-            self.linear_evaluation_model_directory = linear_evaluation_config['model_directory']
-            if not os.path.isdir(self.linear_evaluation_model_directory):
-                self.logger.error(
-                    f"linear_evaluation model_directory: {self.linear_evaluation_model_directory} does not exist!"
-                )
-            self.logger.info(f"setting linear_evaluation model_directory to {self.linear_evaluation_model_directory}.")
-        else:
-            self.linear_evaluation_model_directory = ''
-            self.logger.info("linear_evaluation model_directory not specified, setting to './'.")
-        if "epochs" not in linear_evaluation_config.keys():
-            self.logger.warn("linear_evaluation: epochs not specified in config.  Setting to 50.")
-            self.config["linear_evaluation"]["epochs"] = 50
-
-    def parse_model_analyzer(
-        self,
-        name:   str = ''
-    ):
-        """
-        """
-        if "model_analyzer" not in self.config.keys():
-            self.logger.warn("no model_analyzer in config file.")
-            self.meta['model_analyzer'] = None
-            return
-        # self.logger.info("configuring model_analyzer")
-        # model_analyzer_config = self.config["model_analyzer"]
-        # self.meta['model_analyzer'] = ModelAnalyzerHandler(
-        #     self.name + name,
-        #     model_analyzer_config,
-        #     meta=self.meta
-        # )
-
-    # TODO: Fix this so that it doesn't need to compute all the paths, but only a subset of
-    # random ones, since the number of paths is N!, which is intractable.
-    def generate_grid_hyper_parameters(
-        self,
-        hyper_parameters_config
-    ):
-        model_parameters = hyper_parameters_config["model_parameters"]
-        self.parameter_paths = flatten_dict(model_parameters)
-        self.logger.info("generating hyper parameter combinations.")
-        self.parameter_combinations = generate_combinations_from_arrays(
-            {tuple(k): v for k, v in self.parameter_paths if isinstance(v, list)}
-        )
-        self.logger.info(f"generated {len(self.parameter_combinations)} different possible hyper parameter combinations.")
-        random.shuffle(self.parameter_combinations)
-        if len(self.parameter_combinations) < len(self.hyper_parameters.keys()):
-            self.logger.info(
-                f"number of iterations {self.iterations} larger than possible combinations" +
-                f" {len(self.parameter_combinations)}.  Setting number of iterations to {len(self.parameter_combinations)}."
-            )
-            self.iterations = len(self.parameter_combinations)
-            self.hyper_parameters = {
-                f'iteration_{ii}': copy.deepcopy(self.config["model"])
-                for ii in range(self.iterations)
-            }
-        for ii, iteration in enumerate(self.hyper_parameters.keys()):
-            for jj, path_value_pair in enumerate(self.parameter_paths):
-                current_parameters = self.hyper_parameters[iteration]
-                for key in path_value_pair[0][:-1]:
-                    current_parameters = current_parameters[key]
-                current_parameters[path_value_pair[0][-1]] = self.parameter_combinations[ii][jj]
-
-    def generate_random_hyper_parameters(
-        self,
-        hyper_parameters_config
-    ):
-        self.logger.error("generate random hyper parameters not available yet!")
-
-    def save_iteration(
-        self,
-        file_tag:   str = ''
-    ):
-        # save model/data/config
-        # create specific folder for this iteration
-        if file_tag != '':
-            output_file = self.meta['run_directory'] + '/ml_module_output_' + file_tag + '.tar.gz'
-        else:
-            output_file = self.meta['run_directory'] + '/ml_module_output.tar.gz'
-        tar_directory(f"{self.meta['local_scratch']}/.tmp/", output_file)
-
     def run_module(self):
         if self.mode == 'training':
             self.run_training()
@@ -373,25 +222,23 @@ class MachineLearningModule(GenericModule):
             self.logger.warning(f"current mode {self.mode} not an available type!")
 
     def run_training(self):
-        for jj in range(self.config['training']['iterations']):
-            self.parse_model(f'_{jj}')
-            self.parse_optimizer(f'_{jj}')
-            self.parse_loss(f'_{jj}')
-            self.parse_metrics(f'_{jj}')
-            self.parse_callbacks(f'_{jj}')
-            self.parse_training(f'_{jj}')
-            self.module_data_product[f'predictions_{jj}'] = self.meta['trainer'].train(
-                epochs=self.config['training']['epochs'],
-                checkpoint=self.config['training']['checkpoint'],
-                progress_bar=self.config['training']['progress_bar'],
-                rewrite_bar=self.config['training']['rewrite_bar'],
-                save_predictions=self.config['training']['save_predictions'],
-                no_timing=self.config['training']['no_timing'],
-                skip_metrics=self.config['training']['skip_metrics']
-            )
-            if self.meta['model_analyzer'] is not None:
-                self.meta['model_analyzer'].analyze(self.meta['model'].model)
-            self.save_iteration(f"iteration_{jj}")
+        self.parse_model()
+        self.parse_loss()
+        self.parse_optimizer()
+        self.parse_metrics()
+        self.parse_callbacks()
+        self.parse_training()
+        self.module_data_product['predictions'] = self.meta['trainer'].train(
+            epochs=self.config['training']['epochs'],
+            checkpoint=self.config['training']['checkpoint'],
+            progress_bar=self.config['training']['progress_bar'],
+            rewrite_bar=self.config['training']['rewrite_bar'],
+            save_predictions=self.config['training']['save_predictions'],
+            no_timing=self.config['training']['no_timing'],
+            skip_metrics=self.config['training']['skip_metrics']
+        )
+        if self.meta['model_analyzer'] is not None:
+            self.meta['model_analyzer'].analyze(self.meta['model'].model)
 
     def run_inference(self):
         self.parse_model()

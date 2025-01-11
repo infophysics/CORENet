@@ -96,9 +96,7 @@ class GenericModel(nn.Module):
         flag:   str = ''
     ):
         # save meta information
-        if not os.path.isdir(f"{self.meta['local_scratch']}/.tmp/models/{self.name}/"):
-            os.makedirs(f"{self.meta['local_scratch']}/.tmp/models/{self.name}/")
-        output = f"{self.meta['local_scratch']}/.tmp/models/{self.name}/" + self.name
+        output = f"{self.meta['run_directory']}/{self.name}"
         if flag != '':
             output += "_" + flag
         meta_info = {

@@ -56,7 +56,10 @@ class Optimizer:
                 self.config["weight_decay"] = 0.001
             self.logger.info(f"weight decay set to {self.config['weight_decay']}")
             self.optimizer = optim.Adam(
-                self.meta['model'].parameters(),
+                [
+                    {'params': self.meta['model'].parameters()},                  # Model parameters
+                    {'params': self.meta['criterion'].task_weights, 'lr': 1e-5}   # GradNorm task weights
+                ],
                 lr=self.learning_rate,
                 betas=self.config["betas"],
                 eps=float(self.config["epsilon"]),

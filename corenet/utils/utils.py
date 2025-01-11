@@ -2,6 +2,7 @@
 Various utility functions
 """
 import os
+import io
 import torch
 import zipfile
 import copy
@@ -12,6 +13,7 @@ import pandas as pd
 import random
 import requests
 import tarfile
+from PIL import Image
 from matplotlib import pyplot as plt
 from os import listdir
 from os.path import isfile, join
@@ -78,6 +80,16 @@ def unzip_file(
 ):
     with zipfile.ZipFile(zip_file, 'r') as zipf:
         zipf.extractall(output_directory)
+
+
+def fig_to_array(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight')
+    buf.seek(0)
+    image = Image.open(buf)
+    image_array = np.array(image)
+    buf.close()
+    return image_array
 
 
 def index_positions(
@@ -505,3 +517,42 @@ def generate_random_dictionaries(
             new_dicts.append(sample_dict)
 
     return new_dicts
+
+
+def generate_gaussian(
+    number_of_samples:  int = 100000,
+    dimension:  int = 5,
+    mean:       float = 0.0,
+    sigma:      float = 1.0,
+    save_plot:  bool = True,
+):
+    means = torch.full(
+        size=(number_of_samples, dimension),
+        fill_value=mean
+    )
+    stds = torch.full(
+        size=(number_of_samples, dimension),
+        fill_value=sigma
+    )
+    normal = torch.normal(
+        mean=means,
+        std=stds,
+    )
+    # if save_plot:
+    #     if not os.path.isdir("plots/distribution/"):
+    #         os.makedirs("plots/distribution/")
+    #     fig, axs = plt.subplots()
+    #     for ii in range(dimension):
+    #         axs.hist(
+    #             normal[:, ii].numpy(),
+    #             bins=100,
+    #             label=f'dimension_{ii}',
+    #             histtype='step',
+    #             density=True, stacked=True
+    #         )
+    #     axs.set_xlabel('x')
+    #     plt.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
+    #     plt.tight_layout()
+    #     plt.savefig("plots/distribution/gaussian_x.png")
+
+    return normal

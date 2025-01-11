@@ -26,17 +26,17 @@ class L2GUTLoss(GenericLoss):
         data
     ):
         """Computes and returns/saves loss information"""
-        data['gut_test_loss'] = self.alpha * self.l2_loss(
+        data['gut_test_l2_loss'] = self.l2_loss(
             data['gut_test'].to(self.device),
             data['gut_test_output'].to(self.device)
         )
-        data['gut_true_loss'] = self.alpha * self.l2_loss(
+        data['gut_true_l2_loss'] = self.l2_loss(
             data['gut_true'].to(self.device),
             data['gut_true_output'].to(self.device)
         )
-        data['weak_test_loss'] = self.alpha * self.l2_loss(
-            data['gut_test'].to(self.device),
-            data['gut_true_output'].to(self.device)
+        data['weak_test_l2_loss'] = self.l2_loss(
+            data['gut_true'].to(self.device),
+            data['weak_test_output'].to(self.device)
         )
-        data[self.name] = data['gut_test_loss'] + data['gut_true_loss'] + data['weak_test_loss']
+        data[self.name] = self.alpha * (data['gut_test_l2_loss'] + data['gut_true_l2_loss'] + data['weak_test_l2_loss'])
         return data

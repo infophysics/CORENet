@@ -1,6 +1,6 @@
 # Test config file for Blip
 module:
-  module_name:  'blank_config'
+  module_name:  'corenet_v1_no_wasserstein'
   module_type:  ['ml']
   module_mode:  ['training']
   gpu:          True
@@ -8,15 +8,16 @@ module:
   verbose:      False
 
 dataset:
-  dataset_folder: ""
+  dataset_folder: "/home/ncarrara/physics/cmssm/"
   dataset_files:  []
-  normalized:     False
+  dataset_type:   'cmssm'
+  normalized:     true
   # ---- variables ----
   # Here we specify the location of the GUT variables in the files
   # and the weak values associated to the trial points.
-  gut_test: []
-  gut_true: []
-  weak_test: []
+  gut_test: [0,5]
+  gut_true: [7,12]
+  weak_test: [5,7]
   labels: []
   # ---- normalization ----
   # Normalization parameters for positions and features.  Typically we want to normalize
@@ -28,54 +29,64 @@ dataset:
 
 loader:
   loader_type:      ""
-  batch_size:       1
-  test_split:       0.0
+  batch_size:       518
+  test_split:       0.1
   test_seed:        0
-  validation_split: 0.0
+  validation_split: 0.3
   validation_seed:  0
-  num_workers:      1
+  num_workers:      4
 
 training:
   iterations:   1
-  epochs:       2
-  checkpoint:   1
+  epochs:       10
+  checkpoint:   10
+  grad_norm:    true
   progress_bar: "all"        # train, validation, test, all
   rewrite_bar:      False # wether to leave bars after each epoch
-  save_predictions: True  # wether to save network outputs in original file
+  save_predictions: False  # wether to save network outputs in original file
   no_timing:    False     # wether to keep timing/memory info in callback
-  skip_metrics: False
+  skip_metrics: True
   seed:         0
 
 model:
   # uncomment the line below and specify the model to load from a checkpoint.
   # load_model:   ".checkpoints/checkpoint_200.ckpt"
   CORENet:
+    mix_gradients: true
+    chuncc: true
     input_dimension:      5
     # encoder parameters
-    encoder_dimensions:   [10, 25, 50, 25, 10]
+    encoder_dimensions:   [25, 50, 100, 50, 25]
     encoder_activation:   'leaky_relu'
     encoder_activation_params:    {'negative_slope': 0.02}
-    encoder_normalization: 'bias'
+    encoder_normalization: 'batch_norm'
     # desired dimension of the latent space
     latent_dimension:     5
     # decoder parameters
-    decoder_dimensions:   [10, 25, 50, 25, 10]
+    decoder_dimensions:   [25, 50, 100, 50, 25]
     decoder_activation:   'leaky_relu'
     decoder_activation_params:    {'negative_slope': 0.02}
-    decoder_normalization: 'bias'
+    decoder_normalization: 'batch_norm'
     # output activation
     output_activation:    'linear'
     output_activation_params:     {}
     # core parameters
-    core_input_dimension: 4
-    core_dimensions:      [10, 25, 50, 25, 10]
+    core_input_dimension: 7
+    core_dimensions:      [25, 50, 100, 50, 25]
     core_activation:   'leaky_relu'
     core_activation_params:    {'negative_slope': 0.02}
-    core_normalization: 'bias'
+    core_normalization: 'batch_norm'
 
 criterion:
-    L2GUTLoss:
-      alpha: 1
+  alpha: 1.5
+  L2GUTLoss:
+    alpha: 1
+  LatentWassersteinLoss:
+    alpha: 100.0
+    latent_variables: [0, 1, 2, 3, 4]
+    num_projections: 1000
+  LatentBinaryLoss:
+    alpha: 1.0
 
 metrics:
 

@@ -79,6 +79,11 @@ class CORENet(GenericModel):
         dictionary and fill it with individual modules.
         """
         self.logger.info(f"Attempting to build corenet architecture using config: {self.config}")
+        if 'mix_gradients' not in self.config.keys():
+            self.config['mix_gradients'] = False
+        if 'chuncc' not in self.config.keys():
+            self.config['chuncc'] = False
+
         _encoder_dict = OrderedDict()
         _latent_dict = OrderedDict()
         _decoder_dict = OrderedDict()
@@ -115,8 +120,20 @@ class CORENet(GenericModel):
             out_features=self.config['latent_dimension'],
             bias=False
         )
+        _latent_dict['latent_norm'] = nn.BatchNorm1d(
+            num_features=self.config['latent_dimension']
+        )
+        _latent_dict['latent_binary'] = nn.Linear(
+            in_features=dimension,
+            out_features=1,
+            bias=False
+        )
+        _latent_dict['latent_binary_activation'] = activations['sigmoid']()
 
         input_dimension = self.config['latent_dimension']
+        if self.config['chuncc']:
+            input_dimension += 1
+
         # iterate over the decoder
         for ii, dimension in enumerate(self.config['decoder_dimensions']):
             if self.config['decoder_normalization'] == 'bias':
@@ -138,12 +155,14 @@ class CORENet(GenericModel):
                 self.config['decoder_activation']
             ](**self.config['decoder_activation_params'])
             input_dimension = dimension
+
         # create the output
         _output_dict['output'] = nn.Linear(
             in_features=dimension,
             out_features=self.input_dimension,
             bias=False
         )
+
         if self.config['output_activation'] != 'linear':
             _output_dict['output_activation'] = activations[
                 self.config['output_activation']
@@ -171,6 +190,13 @@ class CORENet(GenericModel):
                 self.config['core_activation']
             ](**self.config['core_activation_params'])
             input_dimension = dimension
+
+        ""
+        _core_dict['latent_layer'] = nn.Linear(
+            in_features=dimension,
+            out_features=self.config['latent_dimension'],
+            bias=False
+        )
         # create the dictionaries
         self.encoder_dict = nn.ModuleDict(_encoder_dict)
         self.latent_dict = nn.ModuleDict(_latent_dict)
@@ -192,32 +218,72 @@ class CORENet(GenericModel):
         """
         gut_test = data['gut_test'].to(self.device)
         gut_true = data['gut_true'].to(self.device)
-        weak_test = data['weak_test'].to(self.device)
-        # first the gut test encoder
+
+        """Apply encoder to gut test and gut true"""
         for layer in self.encoder_dict.values():
             gut_test = layer(gut_test)
             gut_true = layer(gut_true)
-        # then apply the weak layer
+
+        """Apply the latent layers"""
+        gut_test_latent = self.latent_dict['latent_layer'](gut_test)
+        gut_test_latent = self.latent_dict['latent_norm'](gut_test_latent)
+        gut_true_latent = self.latent_dict['latent_layer'](gut_true)
+        gut_true_latent = self.latent_dict['latent_norm'](gut_true_latent)
+
+        """Grab a copy of the latent output for gut_test"""
+        gut_test_latent_copy = gut_test_latent.clone()
+
+        """Determine whether we want to mix the gradients"""
+        if not self.config['mix_gradients']:
+            gut_test_latent_copy = gut_test_latent_copy.detach()
+
+        """Form weak input"""
+        weak_test_latent = torch.cat(
+            (data['weak_test'].to(self.device), gut_test_latent_copy),
+            dim=1
+        )
+
+        """Apply the CORENet to the weak input"""
         for layer in self.core_dict.values():
-            weak_test = layer(weak_test)
-        # apply the latent layers
-        for layer in self.latent_dict.values():
-            gut_test = layer(gut_test)
-            gut_true = layer(gut_true)
-            weak_test = layer(weak_test)
-        data['gut_test_latent'] = gut_test
-        data['gut_true_latent'] = gut_true
-        data['weak_test_latent'] = weak_test
-        # now get the gut outputs
+            weak_test_latent = layer(weak_test_latent)
+
+        """Apply the latent binary"""
+        gut_test_binary = self.latent_dict['latent_binary'](gut_test)
+        gut_test_binary = self.latent_dict['latent_binary_activation'](gut_test_binary)
+        gut_true_binary = self.latent_dict['latent_binary'](gut_true)
+        gut_true_binary = self.latent_dict['latent_binary_activation'](gut_true_binary)
+        weak_test_binary = torch.all(gut_true == gut_true, dim=1).int().unsqueeze(1)
+
+        """Save the latent values"""
+        data['gut_test_latent'] = gut_test_latent
+        data['gut_true_latent'] = gut_true_latent
+        data['weak_test_latent'] = weak_test_latent
+        data['gut_test_binary'] = gut_test_binary
+        data['gut_true_binary'] = gut_true_binary
+        data['weak_test_binary'] = weak_test_binary
+
+        if self.config['chuncc']:
+            gut_test_latent = torch.cat((gut_test_latent, gut_test_binary), dim=1)
+            gut_true_latent = torch.cat((gut_true_latent, gut_true_binary), dim=1)
+            weak_test_latent = torch.cat((weak_test_latent, weak_test_binary), dim=1)
+
+        gut_test = gut_test_latent
+        gut_true = gut_true_latent
+        weak_test = weak_test_latent
+
+        """Pass values through the decoder"""
         for layer in self.decoder_dict.values():
             gut_test = layer(gut_test)
             gut_true = layer(gut_true)
             weak_test = layer(weak_test)
-        # apply outputs
+
+        """Apply the output layers"""
         for layer in self.output_dict.values():
             gut_test = layer(gut_test)
             gut_true = layer(gut_true)
             weak_test = layer(weak_test)
+
+        """Save output values"""
         data['gut_test_output'] = gut_test
         data['gut_true_output'] = gut_true
         data['weak_test_output'] = weak_test

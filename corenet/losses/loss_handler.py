@@ -6,6 +6,7 @@ import importlib.util
 import sys
 import inspect
 import torch
+import torch.nn as nn
 
 from corenet.utils.logger import Logger
 from corenet.losses import GenericLoss
@@ -56,6 +57,8 @@ class LossHandler:
                 loss.name: torch.empty(size=(0, 1), dtype=torch.float, device=self.device)
                 for loss in losses
             }
+        # Store initial losses for normalization
+        self.initial_losses = None
 
     def set_config(self, config):
         self.config = config
@@ -103,6 +106,10 @@ class LossHandler:
         # list of available criterions
         self.collect_loss_functions()
         # check config
+        if 'alpha' in self.config.keys():
+            self.alpha = self.config['alpha']
+        else:
+            self.alpha = 1.0
         if "custom_loss_file" in self.config.keys():
             if os.path.isfile(self.config["custom_loss_file"]):
                 try:
@@ -116,7 +123,7 @@ class LossHandler:
                 self.logger.error(f'custom_loss_file {self.config["custom_loss_file"]} not found!')
         # process loss functions
         for item in self.config.keys():
-            if item == "custom_loss_file":
+            if item == "custom_loss_file" or item == "alpha":
                 continue
             # check that loss function exists
             if item not in self.available_criterions.keys():
@@ -143,7 +150,7 @@ class LossHandler:
         self.losses = {}
         self.batch_loss = {}
         for item in self.config.keys():
-            if item == "custom_loss_file":
+            if item == "custom_loss_file" or item == "alpha":
                 continue
             if item in self.losses:
                 self.logger.warn('duplicate loss specified in config! Attempting to arrange by target_type.')
@@ -152,6 +159,8 @@ class LossHandler:
             self.losses[item] = self.available_criterions[item](**self.config[item], meta=self.meta)
             self.batch_loss[item] = torch.empty(size=(0, 1), dtype=torch.float, device=self.device)
             self.logger.info(f'added loss function "{item}" to LossHandler.')
+        # Learnable weights for each loss
+        self.task_weights = nn.Parameter(torch.ones(len(self.losses), requires_grad=True, device=self.device))
 
     def set_device(
         self,
@@ -192,13 +201,83 @@ class LossHandler:
         if loss in self.batch_loss.keys():
             self.batch_loss.pop(loss)
 
+    def normalize_gradients(
+        self,
+        grads
+    ):
+        # total_norm = torch.sqrt(sum(torch.sum(g ** 2) for g in grads if g is not None))
+        # normalized_grads = [g / (total_norm + 1e-6) for g in grads if g is not None]
+        return torch.norm(torch.stack([torch.norm(g) for g in grads if g is not None]))
+
     def loss(
         self,
         data,
+        task='training'
     ):
         total_loss = 0
-        for loss in self.losses.values():
+        # iterate over loss functions
+        for ii, loss in enumerate(self.losses.values()):
             data = loss._loss(data)
-            total_loss += data[loss.name]
+            total_loss += self.task_weights[ii] * data[loss.name]
+
+        # Initialize initial losses during the first batch
+        if self.initial_losses is None:
+            self.initial_losses = [data[loss.name] for loss in self.losses.values()]
+
         data['loss'] = total_loss
+
+        if task == 'training':
+
+            # Compute gradient norms for each task with clipping
+            max_norm = 10.0  # Gradient norm limit
+
+            # Compute gradient norms for each task
+            grads = [
+                torch.autograd.grad(
+                    data[loss.name],
+                    self.meta['model'].parameters(),
+                    retain_graph=True,
+                    create_graph=True,
+                    allow_unused=True
+                )
+                for loss in self.losses.values()
+            ]
+
+            grad_norms = [torch.clamp(self.normalize_gradients(grad), max=max_norm) for grad in grads]
+            gradient_norms = torch.stack(grad_norms)
+
+            # Compute relative inverse training rates
+            loss_ratios = torch.tensor([
+                data[loss.name] / (self.initial_losses[ii] + 1e-4)
+                for ii, loss in enumerate(self.losses.values())
+            ], device=self.device)
+
+            avg_loss_ratio = loss_ratios.mean()
+
+            # Clamp the loss ratios to prevent explosion
+            scaled_loss_ratios = torch.clamp(loss_ratios / avg_loss_ratio, min=0.1, max=max_norm)
+            target_grad_norms = gradient_norms.detach() * (scaled_loss_ratios ** self.alpha)
+
+            # GradNorm loss to balance gradients
+            grad_norm_loss = torch.sum(torch.abs(gradient_norms - target_grad_norms))
+
+            data['grad_norm_loss'] = grad_norm_loss
+
         return data
+
+    def update_task_weights(
+        self,
+        grad_norm_loss,
+        optimizer
+    ):
+        optimizer.zero_grad()
+        grad_norm_loss.backward()
+
+        # Apply gradient clipping to task weights
+        torch.nn.utils.clip_grad_norm_([self.task_weights], max_norm=0.1)
+        optimizer.step()
+
+        # Normalize and clamp task weights
+        with torch.no_grad():
+            self.task_weights[:] = torch.clamp(self.task_weights, min=1e-3, max=10.0)
+            self.task_weights[:] = self.task_weights / self.task_weights.sum()

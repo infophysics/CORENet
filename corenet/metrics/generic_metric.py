@@ -10,12 +10,8 @@ class GenericMetric:
     """
     Abstract base class for corenet metrics.  The inputs are
         1. name - a unique name for the metric function.
-        2. target_type - specifies whether the targets are features/classes/clusters/hits/etc.
-        3. when_to_compute - when to compute the metric, 'train', 'validation', 'test', 'train_all', 'inference', 'all'
-        4. targets - list of names for the targets.
-        5. outputs - list of names of the associated outputs for each target.
-        6. augmentations - specified whether augmentations are created for the dataset
-        7. meta - meta information from the module.
+        2. when_to_compute - when to compute the metric, 'train', 'validation', 'test', 'train_all', 'inference', 'all'
+        3. meta - meta information from the module.
     """
     def __init__(
         self,

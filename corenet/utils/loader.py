@@ -4,7 +4,6 @@ Generic data loader class for corenet.
 import torch
 import pickle
 import os.path as osp
-import MinkowskiEngine as ME
 from torch.utils.data import Subset, random_split
 from torch.utils.data import DataLoader
 

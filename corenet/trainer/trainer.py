@@ -56,6 +56,9 @@ class Trainer:
 
     def process_config(self):
         self.logger.info("constructing model trainer.")
+        if "grad_norm" not in self.config.keys():
+            self.config["grad_norm"] = False
+        self.grad_norm = self.config["grad_norm"]
         self.process_model()
         self.process_directories()
         self.process_criterion()
@@ -77,13 +80,13 @@ class Trainer:
     def process_directories(self):
         # define directories
         if "timing_dir" not in self.config:
-            self.config["timing_dir"] = f'{self.meta["local_scratch"]}/plots/{self.model.name}/timing/'
+            self.config["timing_dir"] = f'{self.meta["run_directory"]}'
         self.meta['timing_dir'] = self.config['timing_dir']
         if not os.path.isdir(self.config['timing_dir']):
             self.logger.info(f"creating timing directory {self.config['timing_dir']}")
             os.makedirs(self.config['timing_dir'])
         if "memory_dir" not in self.config:
-            self.config["memory_dir"] = f'{self.meta["local_scratch"]}/plots/{self.model.name}/timing/'
+            self.config["memory_dir"] = f'{self.meta["run_directory"]}'
         self.meta['memory_dir'] = self.config['memory_dir']
         if not os.path.isdir(self.config['memory_dir']):
             self.logger.info(f"creating timing directory {self.config['memory_dir']}")
@@ -141,7 +144,7 @@ class Trainer:
             output_dir=self.meta['timing_dir'],
             timers=self.timers
         )
-        self.callbacks.add_callback(self.timer_callback)
+        # self.callbacks.add_callback(self.timer_callback)
 
         # add memory info
         self.memory_trackers = MemoryTrackers(gpu=self.gpu)
@@ -149,7 +152,7 @@ class Trainer:
             output_dir=self.meta['memory_dir'],
             memory_trackers=self.memory_trackers
         )
-        self.callbacks.add_callback(self.memory_callback)
+        # self.callbacks.add_callback(self.memory_callback)
 
     def process_consistency_check(self):
         # run consistency check
@@ -159,11 +162,11 @@ class Trainer:
         self,
         epoch:  int = 99999
     ):
-        if not os.path.exists(f"{self.meta['local_scratch']}/.checkpoints/"):
-            os.makedirs(f"{self.meta['local_scratch']}/.checkpoints/")
+        if not os.path.exists(f"{self.meta['run_directory']}/.checkpoints/"):
+            os.makedirs(f"{self.meta['run_directory']}/.checkpoints/")
         torch.save(
             self.model.state_dict(),
-            f"{self.meta['local_scratch']}/.checkpoints/checkpoint_{epoch}.ckpt"
+            f"{self.meta['run_directory']}/.checkpoints/checkpoint_{epoch}.ckpt"
         )
 
     def train(
@@ -280,14 +283,18 @@ class Trainer:
                 # compute loss
                 self.timers.timers['training_loss'].start()
                 self.memory_trackers.memory_trackers['training_loss'].start()
-                data = self.criterion.loss(data)
+                data = self.criterion.loss(data, task='training')
                 self.memory_trackers.memory_trackers['training_loss'].end()
                 self.timers.timers['training_loss'].end()
 
                 # backprop
                 self.timers.timers['training_loss_backward'].start()
                 self.memory_trackers.memory_trackers['training_loss_backward'].start()
-                data['loss'].backward()
+                if self.grad_norm:
+                    data['loss'].backward(retain_graph=True)
+                    self.criterion.update_task_weights(data['grad_norm_loss'], self.meta['optimizer'])
+                else:
+                    data['loss'].backward()
                 self.memory_trackers.memory_trackers['training_loss_backward'].end()
                 self.timers.timers['training_loss_backward'].end()
 
@@ -317,7 +324,7 @@ class Trainer:
                         epoch_train_losses[key].append(value.detach().cpu())
                         self.meta['tensorboard'].add_scalar(key + '_train', value, train_iteration)
             for key, value in epoch_train_losses.items():
-                self.meta['tensorboard'].add_scalar(key + '_train', np.mean(value), epoch)
+                self.meta['tensorboard'].add_scalar(key + '_train_avg', np.mean(value), epoch)
 
             # update timing info
             self.memory_trackers.memory_trackers['epoch_training'].end()
@@ -402,7 +409,7 @@ class Trainer:
                     # compute loss
                     self.timers.timers['validation_loss'].start()
                     self.memory_trackers.memory_trackers['validation_loss'].start()
-                    data = self.criterion.loss(data)
+                    data = self.criterion.loss(data, task='validation')
                     self.memory_trackers.memory_trackers['validation_loss'].end()
                     self.timers.timers['validation_loss'].end()
 
@@ -425,7 +432,7 @@ class Trainer:
                             epoch_val_losses[key].append(value.detach().cpu())
                             self.meta['tensorboard'].add_scalar(key + '_val', value, val_iteration)
                 for key, value in epoch_val_losses.items():
-                    self.meta['tensorboard'].add_scalar(key + '_val', np.mean(value), epoch)
+                    self.meta['tensorboard'].add_scalar(key + '_val_avg', np.mean(value), epoch)
 
                 # update timing info
                 self.memory_trackers.memory_trackers['epoch_validation'].end()
@@ -507,7 +514,7 @@ class Trainer:
                 data = self.model(data)
 
                 # compute loss
-                data = self.criterion.loss(data)
+                data = self.criterion.loss(data, task='test')
 
                 # update metrics
                 if self.metrics is not None:
@@ -526,7 +533,7 @@ class Trainer:
                         self.meta['tensorboard'].add_scalar(key + '_test', value, test_iteration)
 
             for key, value in test_losses.items():
-                self.meta['tensorboard'].add_scalar(key + '_test', torch.mean(value), epoch)
+                self.meta['tensorboard'].add_scalar(key + '_test_avg', torch.mean(torch.tensor(value)), epoch)
 
             """Get metrics and report to tensorboard"""
             if self.metrics is not None:
@@ -539,6 +546,85 @@ class Trainer:
         self.callbacks.evaluate_testing()
         # save the final model
         self.model.save_model(flag='trained')
+
+        """Generate plots"""
+        self.model.set_device('cpu')
+        if (progress_bar == 'all' or progress_bar == 'train'):
+            training_loop = tqdm(
+                enumerate(self.meta['loader'].train_loader, 0),
+                total=len(self.meta['loader'].train_loader),
+                leave=rewrite_bar,
+                position=0,
+                colour='green'
+            )
+        else:
+            training_loop = enumerate(self.meta['loader'].train_loader, 0)
+        training_data = {}
+        with torch.no_grad():
+            for ii, data in training_loop:
+                data = self.model(data)
+                if ii == 0:
+                    for key, value in data.items():
+                        training_data[key] = value.cpu()
+                else:
+                    for key, value in data.items():
+                        training_data[key] = torch.cat((training_data[key], value.cpu()))
+
+        self.meta['dataset'].evaluate_outputs(training_data, data_type='training')
+
+        """Now for validation"""
+        if (progress_bar == 'all' or progress_bar == 'validation'):
+            validation_loop = tqdm(
+                enumerate(self.meta['loader'].validation_loader, 0),
+                total=len(self.meta['loader'].validation_loader),
+                leave=rewrite_bar,
+                position=0,
+                colour='green'
+            )
+        else:
+            validation_loop = enumerate(self.meta['loader'].train_loader, 0)
+        validation_data = {}
+        with torch.no_grad():
+            for ii, data in validation_loop:
+                data = self.model(data)
+                if ii == 0:
+                    for key, value in data.items():
+                        validation_data[key] = value.cpu()
+                else:
+                    for key, value in data.items():
+                        validation_data[key] = torch.cat((validation_data[key], value.cpu()))
+
+        self.meta['dataset'].evaluate_outputs(validation_data, data_type='validation')
+
+        """Then for testing"""
+        if (progress_bar == 'all' or progress_bar == 'test'):
+            test_loop = tqdm(
+                enumerate(self.meta['loader'].test_loader, 0),
+                total=len(self.meta['loader'].test_loader),
+                leave=rewrite_bar,
+                position=0,
+                colour='green'
+            )
+        else:
+            test_loop = enumerate(self.meta['loader'].train_loader, 0)
+        test_data = {}
+        with torch.no_grad():
+            for ii, data in test_loop:
+                data = self.model(data)
+                if ii == 0:
+                    for key, value in data.items():
+                        test_data[key] = value.cpu()
+                else:
+                    for key, value in data.items():
+                        test_data[key] = torch.cat((test_data[key], value.cpu()))
+
+        self.meta['dataset'].evaluate_outputs(test_data, data_type='test')
+
+        """Now all the datasets together"""
+        total_dataset = {}
+        for key in training_data.keys():
+            total_dataset[key] = torch.cat((training_data[key], validation_data[key], test_data[key]))
+        self.meta['dataset'].evaluate_outputs(total_dataset, data_type='all')
 
         # see if predictions should be saved
         if save_predictions:
@@ -628,7 +714,7 @@ class Trainer:
                         predictions[key].append([self.model.forward_views[key].cpu().numpy()])
                 # compute loss
                 if self.criterion is not None:
-                    data = self.criterion.loss(data)
+                    data = self.criterion.loss(data, task='inference')
 
                 # update metrics
                 if not skip_metrics:
