@@ -37,7 +37,7 @@ class LatentBinaryAccuracy(GenericMetric):
         answers = torch.all(data['gut_test'] == data['gut_true'], dim=1).float().unsqueeze(1)
         accuracy = (predictions == answers).float().mean()
         self.batch_metric = torch.cat(
-            (self.batch_metric, torch.tensor([[accuracy]], device=self.device)), 
+            (self.batch_metric, torch.tensor([[accuracy]], device=self.device)),
             dim=0
         )
 

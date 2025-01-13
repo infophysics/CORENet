@@ -86,32 +86,32 @@ class LatentWassersteinLoss(GenericLoss):
         )
         data['gut_true_wasserstein_loss'] = (torch.pow(wasserstein_distance, 2)).mean()
 
-        # """Weak test space"""
-        # distribution_samples = self.distribution[
-        #     torch.randint(
-        #         high=self.distribution.size(0),
-        #         size=(data['weak_test_latent'].size(0),))
-        # ].to(self.device)
-        # # first, generate a random sample on a sphere
-        # embedding_dimension = distribution_samples.size(1)
-        # normal_samples = np.random.normal(
-        #     size=(self.num_projections, embedding_dimension)
-        # )
-        # normal_samples /= np.sqrt((normal_samples**2).sum())
-        # projections = torch.tensor(normal_samples).transpose(0, 1).to(self.device)
+        """Weak test space"""
+        distribution_samples = self.distribution[
+            torch.randint(
+                high=self.distribution.size(0),
+                size=(data['weak_test_latent'].size(0),))
+        ].to(self.device)
+        # first, generate a random sample on a sphere
+        embedding_dimension = distribution_samples.size(1)
+        normal_samples = np.random.normal(
+            size=(self.num_projections, embedding_dimension)
+        )
+        normal_samples /= np.sqrt((normal_samples**2).sum())
+        projections = torch.tensor(normal_samples).transpose(0, 1).to(self.device)
 
-        # # now project the embedded samples onto the sphere
-        # encoded_projections = data['weak_test_latent'].matmul(projections.float()).transpose(0, 1).to(self.device)
-        # distribution_projections = distribution_samples.float().matmul(projections.float()).transpose(0, 1).to(self.device)
+        # now project the embedded samples onto the sphere
+        encoded_projections = data['weak_test_latent'].matmul(projections.float()).transpose(0, 1).to(self.device)
+        distribution_projections = distribution_samples.float().matmul(projections.float()).transpose(0, 1).to(self.device)
 
-        # # calculate the distance between the distributions
-        # wasserstein_distance = (
-        #     torch.sort(encoded_projections, dim=1)[0] -
-        #     torch.sort(distribution_projections, dim=1)[0]
-        # )
-        # data['weak_test_wasserstein_loss'] = (torch.pow(wasserstein_distance, 2)).mean()
+        # calculate the distance between the distributions
+        wasserstein_distance = (
+            torch.sort(encoded_projections, dim=1)[0] -
+            torch.sort(distribution_projections, dim=1)[0]
+        )
+        data['weak_test_wasserstein_loss'] = (torch.pow(wasserstein_distance, 2)).mean()
 
         data[self.name] = self.alpha * (
-            data['gut_test_wasserstein_loss'] + data['gut_true_wasserstein_loss']
+            data['gut_test_wasserstein_loss'] + data['gut_true_wasserstein_loss'] + data['weak_test_wasserstein_loss']
         )
         return data

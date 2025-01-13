@@ -274,7 +274,7 @@ class LossHandler:
         grad_norm_loss.backward()
 
         # Apply gradient clipping to task weights
-        torch.nn.utils.clip_grad_norm_([self.task_weights], max_norm=0.1)
+        torch.nn.utils.clip_grad_norm_([self.task_weights], max_norm=1.0)
         optimizer.step()
 
         # Normalize and clamp task weights
