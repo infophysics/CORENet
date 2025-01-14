@@ -201,83 +201,68 @@ class LossHandler:
         if loss in self.batch_loss.keys():
             self.batch_loss.pop(loss)
 
-    def normalize_gradients(
-        self,
-        grads
-    ):
-        # total_norm = torch.sqrt(sum(torch.sum(g ** 2) for g in grads if g is not None))
-        # normalized_grads = [g / (total_norm + 1e-6) for g in grads if g is not None]
-        return torch.norm(torch.stack([torch.norm(g) for g in grads if g is not None]))
+    def normalize_gradients(self, grads):
+        flat_grads = [g.view(-1) for g in grads if g is not None]
+        return torch.norm(torch.cat(flat_grads))
 
     def loss(
         self,
-        data,
-        task='training'
+        data
     ):
-        total_loss = 0
-        # iterate over loss functions
+        total_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
+
         for ii, loss in enumerate(self.losses.values()):
             data = loss._loss(data)
-            total_loss += self.task_weights[ii] * data[loss.name]
+            data[loss.name + '_weight'] = self.task_weights[ii]
+            total_loss = total_loss + (self.task_weights[ii].clone() * data[loss.name])
 
-        # Initialize initial losses during the first batch
         if self.initial_losses is None:
-            self.initial_losses = [data[loss.name] for loss in self.losses.values()]
+            self.initial_losses = [data[loss.name].detach() for loss in self.losses.values()]
 
         data['loss'] = total_loss
-
-        if task == 'training':
-
-            # Compute gradient norms for each task with clipping
-            max_norm = 10.0  # Gradient norm limit
-
-            # Compute gradient norms for each task
-            grads = [
-                torch.autograd.grad(
-                    data[loss.name],
-                    self.meta['model'].parameters(),
-                    retain_graph=True,
-                    create_graph=True,
-                    allow_unused=True
-                )
-                for loss in self.losses.values()
-            ]
-
-            grad_norms = [torch.clamp(self.normalize_gradients(grad), max=max_norm) for grad in grads]
-            gradient_norms = torch.stack(grad_norms)
-
-            # Compute relative inverse training rates
-            loss_ratios = torch.tensor([
-                data[loss.name] / (self.initial_losses[ii] + 1e-4)
-                for ii, loss in enumerate(self.losses.values())
-            ], device=self.device)
-
-            avg_loss_ratio = loss_ratios.mean()
-
-            # Clamp the loss ratios to prevent explosion
-            scaled_loss_ratios = torch.clamp(loss_ratios / avg_loss_ratio, min=0.1, max=max_norm)
-            target_grad_norms = gradient_norms.detach() * (scaled_loss_ratios ** self.alpha)
-
-            # GradNorm loss to balance gradients
-            grad_norm_loss = torch.sum(torch.abs(gradient_norms - target_grad_norms))
-
-            data['grad_norm_loss'] = grad_norm_loss
-
         return data
 
-    def update_task_weights(
+    def grad_norm_loss(
         self,
-        grad_norm_loss,
-        optimizer
+        data
     ):
-        optimizer.zero_grad()
-        grad_norm_loss.backward()
+        max_norm = 10.0
 
-        # Apply gradient clipping to task weights
-        torch.nn.utils.clip_grad_norm_([self.task_weights], max_norm=1.0)
+        grads = [
+            torch.autograd.grad(
+                data[loss.name],
+                self.meta['model'].parameters(),
+                retain_graph=True,
+                create_graph=True,
+                allow_unused=True
+            )
+            for loss in self.losses.values()
+        ]
+
+        grad_norms = [self.normalize_gradients(grad) for grad in grads]
+        gradient_norms = torch.stack(grad_norms)
+
+        loss_ratios = torch.stack([
+            self.task_weights[ii] * data[loss.name] / (self.initial_losses[ii] + 1e-4)
+            for ii, loss in enumerate(self.losses.values())
+        ]).to(self.device)
+
+        avg_loss_ratio = loss_ratios.mean()
+
+        scaled_loss_ratios = loss_ratios / avg_loss_ratio
+        target_grad_norms = gradient_norms * (scaled_loss_ratios ** self.alpha)
+
+        grad_norm_loss = torch.sum(torch.abs(gradient_norms - target_grad_norms))
+
+        data['grad_norm_loss'] = grad_norm_loss
+        return data
+
+    def update_task_weights(self, grad_norm_loss, optimizer):
+        optimizer.zero_grad()
+        grad_norm_loss.backward(retain_graph=True)
+        torch.nn.utils.clip_grad_norm_([self.task_weights], max_norm=10.0)
         optimizer.step()
 
-        # Normalize and clamp task weights
         with torch.no_grad():
-            self.task_weights[:] = torch.clamp(self.task_weights, min=1e-3, max=10.0)
-            self.task_weights[:] = self.task_weights / self.task_weights.sum()
+            self.task_weights.copy_(torch.clamp(self.task_weights, min=1e-3, max=10.0))
+            self.task_weights.copy_(self.task_weights / self.task_weights.sum())

@@ -218,6 +218,7 @@ class Trainer:
         train_iteration = 0
         val_iteration = 0
         test_losses = {}
+        torch.autograd.set_detect_anomaly(True)
         # iterate over epochs
         for epoch in range(epochs):
             epoch_train_losses = {}
@@ -260,8 +261,7 @@ class Trainer:
                 """
                 self.timers.timers['training_zero_grad'].start()
                 self.memory_trackers.memory_trackers['training_zero_grad'].start()
-                for param in self.model.parameters():
-                    param.grad = None
+                self.meta['optimizer'].zero_grad()
                 self.memory_trackers.memory_trackers['training_zero_grad'].end()
                 self.timers.timers['training_zero_grad'].end()
                 # get the network output
@@ -283,7 +283,9 @@ class Trainer:
                 # compute loss
                 self.timers.timers['training_loss'].start()
                 self.memory_trackers.memory_trackers['training_loss'].start()
-                data = self.criterion.loss(data, task='training')
+                data = self.criterion.loss(data)
+                if self.grad_norm:
+                    data = self.criterion.grad_norm_loss(data)
                 self.memory_trackers.memory_trackers['training_loss'].end()
                 self.timers.timers['training_loss'].end()
 
@@ -292,7 +294,10 @@ class Trainer:
                 self.memory_trackers.memory_trackers['training_loss_backward'].start()
                 if self.grad_norm:
                     data['loss'].backward(retain_graph=True)
-                    self.criterion.update_task_weights(data['grad_norm_loss'], self.meta['optimizer'])
+                    self.criterion.update_task_weights(
+                        data['grad_norm_loss'],
+                        self.meta['optimizer']
+                    )
                 else:
                     data['loss'].backward()
                 self.memory_trackers.memory_trackers['training_loss_backward'].end()
@@ -409,7 +414,7 @@ class Trainer:
                     # compute loss
                     self.timers.timers['validation_loss'].start()
                     self.memory_trackers.memory_trackers['validation_loss'].start()
-                    data = self.criterion.loss(data, task='validation')
+                    data = self.criterion.loss(data)
                     self.memory_trackers.memory_trackers['validation_loss'].end()
                     self.timers.timers['validation_loss'].end()
 
@@ -514,7 +519,7 @@ class Trainer:
                 data = self.model(data)
 
                 # compute loss
-                data = self.criterion.loss(data, task='test')
+                data = self.criterion.loss(data)
 
                 # update metrics
                 if self.metrics is not None:
@@ -714,7 +719,7 @@ class Trainer:
                         predictions[key].append([self.model.forward_views[key].cpu().numpy()])
                 # compute loss
                 if self.criterion is not None:
-                    data = self.criterion.loss(data, task='inference')
+                    data = self.criterion.loss(data)
 
                 # update metrics
                 if not skip_metrics:

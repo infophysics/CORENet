@@ -58,7 +58,7 @@ class Optimizer:
             self.optimizer = optim.Adam(
                 [
                     {'params': self.meta['model'].parameters()},                  # Model parameters
-                    {'params': self.meta['criterion'].task_weights, 'lr': 1e-5}   # GradNorm task weights
+                    # {'params': self.meta['criterion'].task_weights, 'lr': self.learning_rate}   # GradNorm task weights
                 ],
                 lr=self.learning_rate,
                 betas=self.config["betas"],
