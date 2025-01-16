@@ -5,6 +5,9 @@ import numpy as np
 import torch
 import torch.nn as nn
 from collections import OrderedDict
+from torchviz import make_dot
+from PIL import Image
+import io
 
 from corenet.models.common import activations, normalizations
 from corenet.models import GenericModel
@@ -13,21 +16,68 @@ corenet_config = {
     # dimension of the input variables
     'input_dimension':      5,
     # encoder parameters
-    'encoder_dimensions':   [10, 25, 50, 25, 10],
+    'encoder_dimensions':   [25, 100, 25],
     'encoder_activation':   'leaky_relu',
     'encoder_activation_params':    {'negative_slope': 0.02},
-    'encoder_normalization': 'bias',
     # desired dimension of the latent space
     'latent_dimension':     5,
     # decoder parameters
-    'decoder_dimensions':   [10, 25, 50, 25, 10],
+    'decoder_dimensions':   [25, 100, 25],
     'decoder_activation':   'leaky_relu',
     'decoder_activation_params':    {'negative_slope': 0.02},
-    'decoder_normalization': 'bias',
     # output activation
     'output_activation':    'linear',
     'output_activation_params':     {},
 }
+
+
+class ResidualBlock(nn.Module):
+    def __init__(
+        self,
+        in_features,
+        out_features,
+        activation,
+        activation_params,
+        dropout: float = 0.3
+    ):
+        super(ResidualBlock, self).__init__()
+        self.linear1 = nn.Linear(
+            in_features, 
+            out_features,
+            bias=False
+        )
+        self.bn1 = nn.BatchNorm1d(out_features)
+        self.activation = activations[
+            activation
+        ](**activation_params)
+        self.dropout = nn.Dropout(dropout)
+        self.linear2 = nn.Linear(
+            out_features,
+            out_features,
+            bias=False
+        )
+        self.bn2 = nn.BatchNorm1d(out_features)
+
+        # Adjust dimension if in_features != out_features
+        self.shortcut = nn.Sequential()
+        if in_features != out_features:
+            self.shortcut = nn.Sequential(
+                nn.Linear(
+                    in_features, 
+                    out_features, 
+                    bias=False
+                ),
+                nn.BatchNorm1d(out_features)
+            )
+
+    def forward(self, x):
+        residual = self.shortcut(x)
+        out = self.activation(self.bn1(self.linear1(x)))
+        out = self.dropout(out)
+        out = self.bn2(self.linear2(out))
+        out += residual  # Skip connection
+        out = self.activation(out)
+        return out
 
 
 class CORENet(GenericModel):
@@ -44,27 +94,7 @@ class CORENet(GenericModel):
         )
         self.config = config
         # check config
-        self.logger.info(f"checking corenet architecture using config: {self.config}")
-        for item in corenet_config.keys():
-            if item not in self.config:
-                self.logger.error(f"parameter {item} was not specified in config file {self.config}")
-                raise AttributeError(f"parameter {item} was not specified in config file {self.config}")
-        if self.config['encoder_activation'] not in activations:
-            self.logger.error(f"Specified activation {self.config['encoder_activation']} is not an allowed type.")
-            raise AttributeError(f"Specified activation {self.config['encoder_activation']} is not an allowed type.")
-        if self.config['encoder_normalization'] not in normalizations:
-            self.logger.error(f"Specified normalization {self.config['encoder_normalization']} is not an allowed type.")
-            raise AttributeError(f"Specified normalization {self.config['encoder_normalization']} is not an allowed type.")
-        if self.config['decoder_activation'] not in activations:
-            self.logger.error(f"Specified activation {self.config['decoder_activation']} is not an allowed type.")
-            raise AttributeError(f"Specified activation {self.config['decoder_activation']} is not an allowed type.")
-        if self.config['decoder_normalization'] not in normalizations:
-            self.logger.error(f"Specified normalization {self.config['decoder_normalization']} is not an allowed type.")
-            raise AttributeError(f"Specified normalization {self.config['decoder_normalization']} is not an allowed type.")
-        if self.config['output_activation'] != 'linear':
-            if self.config['output_activation'] not in activations:
-                self.logger.error(f"Specified activation {self.config['output_activation']} is not an allowed type.")
-                raise AttributeError(f"Specified activation {self.config['output_activation']} is not an allowed type.")
+
         # construct the model
         self.forward_views = {}
         self.forward_view_map = {}
@@ -84,130 +114,126 @@ class CORENet(GenericModel):
         if 'chuncc' not in self.config.keys():
             self.config['chuncc'] = False
 
-        _encoder_dict = OrderedDict()
-        _latent_dict = OrderedDict()
-        _decoder_dict = OrderedDict()
-        _output_dict = OrderedDict()
-        _core_dict = OrderedDict()
-
         self.input_dimension = self.config['input_dimension']
+
+        self.construct_encoder()
+        self.construct_latent_space()
+        self.construct_core()
+        self.construct_decoder()
+        self.construct_output()
+
+        self.save_model_architecture()
+
+        # record the info
+        self.logger.info("constructed corenet.")
+
+    def construct_encoder(self):
+        """
+        Construction of encoder layer. This takes GUT -> latent space
+        """
+        self.encoder_dict = OrderedDict()
+
         input_dimension = self.input_dimension
+
         # iterate over the encoder
         for ii, dimension in enumerate(self.config['encoder_dimensions']):
-            if self.config['encoder_normalization'] == 'bias':
-                _encoder_dict[f'encoder_{ii}'] = nn.Linear(
-                    in_features=input_dimension,
-                    out_features=dimension,
-                    bias=True
-                )
-            else:
-                _encoder_dict[f'encoder_{ii}'] = nn.Linear(
-                    in_features=input_dimension,
-                    out_features=dimension,
-                    bias=False
-                )
-                _encoder_dict[f'encoder_{ii}_batchnorm'] = nn.BatchNorm1d(
-                    num_features=dimension
-                )
-            _encoder_dict[f'encoder_{ii}_activation'] = activations[
-                self.config['encoder_activation']
-            ](**self.config['encoder_activation_params'])
+            self.encoder_dict[f'encoder_{ii}'] = ResidualBlock(
+                in_features=input_dimension,
+                out_features=dimension,
+                activation=self.config['encoder_activation'],
+                activation_params=self.config['encoder_activation_params'],
+                dropout=self.config['encoder_dropout']
+            )
             input_dimension = dimension
+        self.encoder_dict = nn.ModuleDict(self.encoder_dict)
+
+    def construct_latent_space(self):
+        """
+        Construction of additional layers for projection to the latent space.
+        """
+        self.latent_dict = OrderedDict()
+        dimension = self.config["encoder_dimensions"][-1]
 
         # create the latent space
-        _latent_dict['latent_layer'] = nn.Linear(
+        self.latent_dict['latent_layer'] = nn.Linear(
             in_features=dimension,
             out_features=self.config['latent_dimension'],
             bias=False
         )
-        _latent_dict['latent_norm'] = nn.BatchNorm1d(
+        self.latent_dict['latent_norm'] = nn.BatchNorm1d(
             num_features=self.config['latent_dimension']
         )
-        _latent_dict['latent_binary'] = nn.Linear(
+        self.latent_dict['latent_binary'] = nn.Linear(
             in_features=dimension,
             out_features=1,
             bias=False
         )
-        _latent_dict['latent_binary_activation'] = activations['sigmoid']()
+        self.latent_dict['latent_binary_activation'] = activations['sigmoid']()
+        self.latent_dict = nn.ModuleDict(self.latent_dict)
 
+    def construct_decoder(self):
+        """
+        Construction of the decoder which goes from latent -> GUT.
+        """
+        self.decoder_dict = OrderedDict()
         input_dimension = self.config['latent_dimension']
         if self.config['chuncc']:
             input_dimension += 1
 
         # iterate over the decoder
         for ii, dimension in enumerate(self.config['decoder_dimensions']):
-            if self.config['decoder_normalization'] == 'bias':
-                _decoder_dict[f'decoder_{ii}'] = nn.Linear(
-                    in_features=input_dimension,
-                    out_features=dimension,
-                    bias=True
-                )
-            else:
-                _decoder_dict[f'decoder_{ii}'] = nn.Linear(
-                    in_features=input_dimension,
-                    out_features=dimension,
-                    bias=False
-                )
-                _decoder_dict[f'decoder_{ii}_batchnorm'] = nn.BatchNorm1d(
-                    num_features=dimension
-                )
-            _decoder_dict[f'decoder_{ii}_activation'] = activations[
-                self.config['decoder_activation']
-            ](**self.config['decoder_activation_params'])
+            self.decoder_dict[f'decoder_{ii}'] = ResidualBlock(
+                in_features=input_dimension,
+                out_features=dimension,
+                activation=self.config['decoder_activation'],
+                activation_params=self.config['decoder_activation_params'],
+                dropout=self.config['decoder_dropout']
+            )
             input_dimension = dimension
+        self.decoder_dict = nn.ModuleDict(self.decoder_dict)
 
+    def construct_output(self):
+        """
+        Construction of final output projection from decoder
+        """
+        self.output_dict = OrderedDict()
+        dimension = self.config["decoder_dimensions"][-1]
         # create the output
-        _output_dict['output'] = nn.Linear(
+        self.output_dict['output'] = nn.Linear(
             in_features=dimension,
             out_features=self.input_dimension,
             bias=False
         )
 
         if self.config['output_activation'] != 'linear':
-            _output_dict['output_activation'] = activations[
+            self.output_dict['output_activation'] = activations[
                 self.config['output_activation']
             ](**self.config['output_activation_params'])
+        self.output_dict = nn.ModuleDict(self.output_dict)
 
+    def construct_core(self):
+        """
+        Construction of CORE network which takes weak + latent -> latent.
+        """
+        self.core_dict = OrderedDict()
         # create the core dictionary
         input_dimension = self.config['core_input_dimension']
         for ii, dimension in enumerate(self.config['core_dimensions']):
-            if self.config['core_normalization'] == 'bias':
-                _core_dict[f'core_{ii}'] = nn.Linear(
-                    in_features=input_dimension,
-                    out_features=dimension,
-                    bias=True
-                )
-            else:
-                _core_dict[f'core_{ii}'] = nn.Linear(
-                    in_features=input_dimension,
-                    out_features=dimension,
-                    bias=False
-                )
-                _core_dict[f'core_{ii}_batchnorm'] = nn.BatchNorm1d(
-                    num_features=dimension
-                )
-            _core_dict[f'core_{ii}_activation'] = activations[
-                self.config['core_activation']
-            ](**self.config['core_activation_params'])
+            self.core_dict[f'core_{ii}'] = ResidualBlock(
+                in_features=input_dimension,
+                out_features=dimension,
+                activation=self.config['core_activation'],
+                activation_params=self.config['core_activation_params'],
+                dropout=self.config['core_dropout']
+            )
             input_dimension = dimension
 
-        ""
-        _core_dict['latent_layer'] = nn.Linear(
+        self.core_dict['latent_layer'] = nn.Linear(
             in_features=dimension,
             out_features=self.config['latent_dimension'],
             bias=False
         )
-        # create the dictionaries
-        self.encoder_dict = nn.ModuleDict(_encoder_dict)
-        self.latent_dict = nn.ModuleDict(_latent_dict)
-        self.decoder_dict = nn.ModuleDict(_decoder_dict)
-        self.output_dict = nn.ModuleDict(_output_dict)
-        self.core_dict = nn.ModuleDict(_core_dict)
-        # record the info
-        self.logger.info(
-            f"constructed corenet with dictionaries:\n{self.encoder_dict}"
-            + f"\n{self.latent_dict}\n{self.decoder_dict}\n{self.output_dict}."
-        )
+        self.core_dict = nn.ModuleDict(self.core_dict)
 
     def forward(
         self,
@@ -317,3 +343,32 @@ class CORENet(GenericModel):
             x = self.encoder_dict[layer](x)
         x = self.latent_dict['latent_layer'](x)
         return x
+
+    def save_model_architecture(self):
+        """Create computation graph with torchviz"""
+        x = {
+            'gut_test': torch.randn(10, self.input_dimension).to(self.device),
+            'gut_true': torch.randn(10, self.input_dimension).to(self.device),
+            'weak_test': torch.randn(
+                10, self.config['core_input_dimension'] - self.input_dimension
+            ).to(self.device)
+        }
+        self.to(self.device)
+        output = self.forward(x)
+        combined_output = torch.cat([v.flatten() for v in output.values()])
+        dot = make_dot(
+            combined_output,
+            params=dict(self.named_parameters()),
+        )
+
+        # Save the graph
+        dot.format = 'png'
+        dot.render(f'{self.meta["run_directory"]}/model_graph')
+        png_bytes = dot.pipe(format='png')
+        image = Image.open(io.BytesIO(png_bytes))
+
+        # Convert to tensorboard-friendly format
+        image_tensor = torch.tensor(
+            np.array(image)
+        ).permute(2, 0, 1).unsqueeze(0) / 255.0  # Normalize to [0,1]
+        self.meta["tensorboard"].add_image('Model Graph', image_tensor[0])

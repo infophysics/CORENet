@@ -15,8 +15,6 @@ from corenet.utils.memory import MemoryTrackers
 from corenet.utils.callbacks import CallbackHandler
 from corenet.utils.callbacks import TimingCallback, MemoryTrackerCallback
 
-from torch.utils.tensorboard import SummaryWriter
-
 
 class Trainer:
     """
@@ -201,11 +199,6 @@ class Trainer:
         # Training
         self.logger.info(f"training dataset '{self.meta['dataset'].name}' for {epochs} epochs.")
 
-        # set up tensorboard
-        self.meta['tensorboard_dir'] = self.meta['run_directory']
-        self.meta['tensorboard'] = SummaryWriter(
-            log_dir=self.meta['tensorboard_dir']
-        )
         """
         Training usually consists of the following steps:
             (1) Zero-out training/validation/testing losses and metrics

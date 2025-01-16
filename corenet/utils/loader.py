@@ -264,6 +264,7 @@ class Loader:
             batch_size=self.batch_size,
             pin_memory=True,
             num_workers=self.num_workers,
+            shuffle=True,
             collate_fn=self.collate_fn
         )
         self.validation_loader = DataLoader(
@@ -271,6 +272,7 @@ class Loader:
             batch_size=self.batch_size,
             pin_memory=True,
             num_workers=self.num_workers,
+            shuffle=True,
             collate_fn=self.collate_fn
         )
         self.total_train_loader = DataLoader(
@@ -278,6 +280,7 @@ class Loader:
             batch_size=self.batch_size,
             pin_memory=True,
             num_workers=self.num_workers,
+            shuffle=True,
             collate_fn=self.collate_fn
         )
         self.test_loader = DataLoader(
@@ -285,6 +288,7 @@ class Loader:
             batch_size=self.batch_size,
             pin_memory=True,
             num_workers=self.num_workers,
+            shuffle=True,
             collate_fn=self.collate_fn
         )
         self.all_loader = DataLoader(
@@ -292,6 +296,7 @@ class Loader:
             batch_size=self.batch_size,
             pin_memory=True,
             num_workers=self.num_workers,
+            shuffle=True,
             collate_fn=self.collate_fn
         )
         self.inference_loader = DataLoader(
@@ -299,6 +304,7 @@ class Loader:
             batch_size=1,
             pin_memory=True,
             num_workers=self.num_workers,
+            shuffle=True,
             collate_fn=self.collate_fn
         )
         self.mc_truth_loader = DataLoader(
@@ -306,5 +312,6 @@ class Loader:
             batch_size=1,
             pin_memory=True,
             num_workers=self.num_workers,
+            shuffle=True,
             collate_fn=self.collate_fn
         )

@@ -156,3 +156,6 @@ class GenericModel(nn.Module):
             self.logger.error(f"unable to load model file {model_file}: {e}.")
             raise ValueError(f"unable to load model file {model_file}: {e}.")
         self.logger.info("successfully loaded model checkpoint.")
+
+    def _dummy_input(self):
+        return None

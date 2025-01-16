@@ -1,13 +1,15 @@
 """
 """
+
 from corenet.utils.logger import Logger
 from corenet.utils.config import ConfigParser
 from corenet.utils.utils import get_datetime
-
 from corenet.module import ModuleHandler
 
 import torch
 import os
+from torch.utils.tensorboard import SummaryWriter
+
 os.environ["TQDM_NOTEBOOK"] = "false"
 
 
@@ -106,6 +108,11 @@ class CORENetRunner:
             'local_corenet_files': self.local_corenet_files,
             'local_data_files': self.local_data_files
         }
+        # set up tensorboard
+        self.meta['tensorboard_dir'] = self.meta['run_directory']
+        self.meta['tensorboard'] = SummaryWriter(
+            log_dir=self.meta['tensorboard_dir']
+        )
         self.logger.info(f'"now" set to: {now}')
         self.logger.info(f'"run_name" set to: {self.run_name}')
         self.logger.info(f'"run_directory" set to: {self.local_run}')

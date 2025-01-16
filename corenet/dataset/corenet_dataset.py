@@ -51,8 +51,9 @@ class CORENetDataset(Dataset):
 
         # Combine all data into a single numpy array
         self.data_set = np.vstack(data_list)
+        # shuffle the dataset
+        np.random.shuffle(self.data_set)
         self.num_events = len(self.data_set)
-
         self.gut_test = self.config['gut_test']
         self.gut_true = self.config['gut_true']
         self.weak_test = self.config['weak_test']

@@ -1,11 +1,6 @@
 """
 Generic module
 """
-import os
-import copy
-import random
-import numpy as np
-
 # from corenet.analysis.model_analyzer_handler import ModelAnalyzerHandler
 from corenet.models import ModelHandler
 from corenet.module.generic_module import GenericModule
