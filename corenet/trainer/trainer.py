@@ -212,6 +212,7 @@ class Trainer:
         val_iteration = 0
         test_losses = {}
         torch.autograd.set_detect_anomaly(True)
+        
         # iterate over epochs
         for epoch in range(epochs):
             epoch_train_losses = {}
@@ -358,9 +359,10 @@ class Trainer:
                                 metrics_training_loop.set_description(f"Training Metrics: Epoch [{epoch+1}/{epochs}]")
 
                         """Get metrics and report to tensorboard"""
-                        metrics = self.metrics.compute()
-                        for key, value in metrics.items():
-                            self.meta['tensorboard'].add_scalar(key + '_train', value, epoch)
+                        data = self.metrics.compute(data)
+                        for key, value in data.items():
+                            if ("metric" in key):
+                                self.meta['tensorboard'].add_scalar(key + '_train', value, epoch)
 
             # evaluate callbacks
             self.timers.timers['training_callbacks'].start()
@@ -464,9 +466,10 @@ class Trainer:
                                 metrics_validation_loop.set_description(f"Validation Metrics: Epoch [{epoch+1}/{epochs}]")
 
                         """Get metrics and report to tensorboard"""
-                        metrics = self.metrics.compute()
-                        for key, value in metrics.items():
-                            self.meta['tensorboard'].add_scalar(key + '_val', value, epoch)
+                        data = self.metrics.compute(data)
+                        for key, value in data.items():
+                            if ("metric" in key):
+                                self.meta['tensorboard'].add_scalar(key + '_val', value, epoch)
 
             # evaluate callbacks
             self.timers.timers['validation_callbacks'].start()
@@ -535,9 +538,10 @@ class Trainer:
 
             """Get metrics and report to tensorboard"""
             if self.metrics is not None:
-                metrics = self.metrics.compute()
-                for key, value in metrics.items():
-                    self.meta['tensorboard'].add_scalar(key + '_test', value, epoch)
+                data = self.metrics.compute(data)
+                for key, value in data.items():
+                    if ("metric" in key):
+                        self.meta['tensorboard'].add_scalar(key + '_test', value, epoch)
 
             # evaluate callbacks
             self.callbacks.evaluate_epoch(train_type='test')
@@ -723,6 +727,14 @@ class Trainer:
                 if (progress_bar is True):
                     inference_loop.set_description(f"Inference: Batch [{ii+1}/{num_batches}]")
                     inference_loop.set_postfix_str(f"loss={data['loss'].item():.2e}")
+
+            if not skip_metrics:
+                if self.metrics is not None:
+                    data = self.metrics.compute(data)
+                    for key, value in data.items():
+                        if ("metric" in key):
+                            self.meta['tensorboard'].add_scalar(key + '_inference', value, 0)
+
         for key in predictions.keys():
             predictions[key] = np.vstack(np.array(predictions[key], dtype=object))
         # save predictions if wanted

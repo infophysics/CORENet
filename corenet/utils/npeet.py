@@ -122,6 +122,8 @@ def kldiv(x, xp, k=3, base=2):
     treep = build_tree(xp)
     nn = query_neighbors(tree, x, k)
     nnp = query_neighbors(treep, x, k - 1)
+    nn = [val for val in nn if val > 0]
+    nnp = [val for val in nnp if val > 0]
     return (const + d * (np.log(nnp).mean() - np.log(nn).mean())) / log(base)
 
 
@@ -321,11 +323,3 @@ def shuffle_test(measure, x, y, z=False, ns=200, ci=0.95, **kwargs):
         outputs[int((1.0 - ci) / 2 * ns)],
         outputs[int((1.0 + ci) / 2 * ns)],
     )
-
-
-if __name__ == "__main__":
-    print("MI between two independent continuous random variables X and Y:")
-    np.random.seed(0)
-    x = np.random.randn(1000, 10)
-    y = np.random.randn(1000, 3)
-    print(mi(x, y, base=2, alpha=0))

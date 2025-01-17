@@ -538,21 +538,19 @@ def generate_gaussian(
         mean=means,
         std=stds,
     )
-    # if save_plot:
-    #     if not os.path.isdir("plots/distribution/"):
-    #         os.makedirs("plots/distribution/")
-    #     fig, axs = plt.subplots()
-    #     for ii in range(dimension):
-    #         axs.hist(
-    #             normal[:, ii].numpy(),
-    #             bins=100,
-    #             label=f'dimension_{ii}',
-    #             histtype='step',
-    #             density=True, stacked=True
-    #         )
-    #     axs.set_xlabel('x')
-    #     plt.legend(bbox_to_anchor=(1.05, 1.0), loc='upper left')
-    #     plt.tight_layout()
-    #     plt.savefig("plots/distribution/gaussian_x.png")
 
     return normal
+
+
+# Function to compute the average original-space distance for each node
+def compute_node_distances(graph, original_distances):
+    color_values = []
+    for node in graph['nodes']:
+        indices = graph['nodes'][node]
+        # Extract pairwise distances for points in the node
+        if len(indices) > 1:
+            avg_distance = np.mean(original_distances[np.ix_(indices, indices)])
+        else:
+            avg_distance = 0  # Single point, no internal distance
+        color_values.append(avg_distance)
+    return color_values

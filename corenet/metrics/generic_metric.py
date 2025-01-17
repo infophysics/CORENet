@@ -32,20 +32,17 @@ class GenericMetric:
     ):
         self.device = device
 
-    def _reset_batch(self):
+    def reset_batch(self):
         pass
 
-    def reset_batch(self):
-        self._reset_batch()
-
-    def _metric_update(
+    def update(
         self,
         data
     ):
-        self.logger.error('"_metric_update" not implemented in Metric!')
+        self.logger.error('"update" not implemented in Metric!')
 
-    def _metric_compute(self):
-        pass
-
-    def compute(self):
-        return self._metric_compute()
+    def compute(
+        self,
+        data
+    ):
+        self.logger.error('"compute" not implemented in Metric!')

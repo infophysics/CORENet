@@ -184,11 +184,9 @@ class MetricHandler:
 
     def compute(
         self,
+        data,
         train_type: str = 'all'
     ):
-        metrics = {
-            metric.name: metric.compute()
-            for name, metric in self.metrics.items()
-            if (train_type == metric.when_to_compute or metric.when_to_compute == 'all')
-        }
-        return metrics
+        for ii, metric in enumerate(self.metrics.values()):
+            data = metric.compute(data)
+        return data

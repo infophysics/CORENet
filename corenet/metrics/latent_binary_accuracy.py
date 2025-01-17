@@ -51,5 +51,9 @@ class LatentBinaryAccuracy(GenericMetric):
             dim=0
         )
 
-    def compute(self):
-        return self.batch_metric.mean()
+    def compute(
+        self,
+        data
+    ):
+        data['latent_binary_accuracy_metric'] = self.batch_metric.mean()
+        return data

@@ -5,9 +5,13 @@ import os
 import numpy as np
 from matplotlib import pyplot as plt
 from torch.utils.data import Dataset
+import kmapper as km
+from sklearn.manifold import TSNE
+from sklearn.cluster import DBSCAN
+from sklearn.metrics import pairwise_distances
 
 from corenet.utils.utils import generate_plot_grid
-from corenet.utils.utils import fig_to_array
+from corenet.utils.utils import fig_to_array, compute_node_distances
 
 
 corenet_dataset_config = {
@@ -436,6 +440,77 @@ class CORENetDataset(Dataset):
         fig_array = fig_to_array(fig)
         self.meta['tensorboard'].add_image(
             f'{data_type}',
+            fig_array,
+            0,
+            dataformats='HWC'
+        )
+        plt.close()
+
+        """Generate mapper projections"""
+        # Pairwise distances in original and latent spaces
+        euclidean_distances = np.linalg.norm(
+            data['gut_test_latent'] - data['weak_test_latent'],
+            axis=1
+        )
+        reconstruction_error = np.linalg.norm(
+            data['gut_test'] - data['gut_test_output'],
+            axis=1
+        )
+        mapper = km.KeplerMapper()
+        # Apply TSNE as a filter function to project latent space into 2D
+        projected_latent = mapper.fit_transform(
+            data['gut_test_latent'][:100000],
+            projection=TSNE(n_components=2)
+        )
+
+        graph = mapper.map(
+            projected_latent,
+            data['gut_test_latent'][:100000],
+            clusterer=DBSCAN(eps=0.3, min_samples=5),
+            cover=km.Cover(n_cubes=20, perc_overlap=0.1)
+        )
+
+        mapper.visualize(
+            graph,
+            path_html=f"{self.meta['run_directory']}/gut_test_latent_space_{data_type}.html",
+            title=f"GUT Test Latent Space - {data_type}",
+            color_values=np.vstack((
+                euclidean_distances[:100000],
+                reconstruction_error[:100000],
+                data['weak_test'][:100000, 0],
+                data['weak_test'][:100000, 1],
+                data['gut_test_binary'].squeeze(1)[:100000]
+            )).T,
+            color_function_name=[
+                "GUT Test - Weak Latent Distance",
+                "GUT Test Reconstruction Error",
+                "Higgs Mass",
+                "Relic Dark Matter Density",
+                "Latent Binary"
+            ]
+        )
+
+        """Generate Correlation projections"""
+        original_distances = np.linalg.norm(
+            data['gut_test'] - data['gut_true'],
+            axis=1
+        )
+        latent_distances = np.linalg.norm(
+            data['gut_test_latent'] - data['gut_true_latent'],
+            axis=1
+        )
+
+        # Correlation plot
+        fig, axs = plt.subplots(figsize=(8, 6))
+        axs.scatter(original_distances[:10000], latent_distances[:10000], alpha=0.3, s=1)
+        axs.set_xlabel("Original Space Distances")
+        axs.set_ylabel("Latent Space Distances")
+        axs.set_title("Correlation between Original and Latent Distances")
+        plt.grid(True)
+        plt.savefig(f'{self.meta["run_directory"]}/correlation_{data_type}.png')
+        fig_array = fig_to_array(fig)
+        self.meta['tensorboard'].add_image(
+            f'correlation_{data_type}',
             fig_array,
             0,
             dataformats='HWC'
