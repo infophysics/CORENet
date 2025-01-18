@@ -151,7 +151,7 @@ class MemoryTrackerCallback(GenericCallback):
                 )
                 labels.append(f'{item.replace(f"{train_type}_", "")}')
         axs.boxplot(
-            box_values,
+            box_values.T,
             vert=True,
             patch_artist=True,
             labels=labels

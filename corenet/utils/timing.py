@@ -98,14 +98,6 @@ class Timers:
             'validation_metrics':   Timer('validation_metrics',   **self.validation_batch_params),
             'validation_progress':  Timer('validation_progress',  **self.validation_batch_params),
             'validation_callbacks': Timer('validation_callbacks', type='validation', level='epoch',  gpu=self.gpu),
-            # clustering information
-            'parameter_clustering': Timer('parameter_clustering',  type='clustering', level='parameter', gpu=self.gpu),
-            'parameter_change':     Timer('parameter_change',         **self.clustering_batch_params),
-            'cluster_data':         Timer('cluster_data',         **self.clustering_batch_params),
-            'cluster_algorithm':    Timer('cluster_algorithm',    **self.clustering_batch_params),
-            'cluster_metrics':      Timer('cluster_metrics',      **self.clustering_batch_params),
-            'cluster_progress':     Timer('cluster_progress',     **self.clustering_batch_params),
-            'cluster_callbacks':    Timer('cluster_callbacks',    type='clustering', level='parameter', gpu=self.gpu),
         }
 
     def reset_timers(self):
@@ -129,14 +121,6 @@ class Timers:
             'validation_metrics':   Timer('validation_metrics',   **self.validation_batch_params),
             'validation_progress':  Timer('validation_progress',  **self.validation_batch_params),
             'validation_callbacks': Timer('validation_callbacks', type='validation', level='epoch',  gpu=self.gpu),
-            # clustering information
-            'parameter_clustering': Timer('parameter_clustering',  type='clustering', level='parameter', gpu=self.gpu),
-            'parameter_change':     Timer('parameter_change',         **self.clustering_batch_params),
-            'cluster_data':         Timer('cluster_data',         **self.clustering_batch_params),
-            'cluster_algorithm':    Timer('cluster_algorithm',    **self.clustering_batch_params),
-            'cluster_metrics':      Timer('cluster_metrics',      **self.clustering_batch_params),
-            'cluster_progress':     Timer('cluster_progress',     **self.clustering_batch_params),
-            'cluster_callbacks':    Timer('cluster_callbacks',    type='clustering', level='parameter', gpu=self.gpu),
         }
 
     def synchronize(self):

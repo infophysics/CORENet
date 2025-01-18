@@ -36,7 +36,7 @@ class CORENetDataset(Dataset):
         self.process_config()
 
     def process_config(self):
-        self.num_events = 10
+        self.training = self.config["training"]
 
         self.dataset_folder = self.config['dataset_folder']
         self.files = [
@@ -67,15 +67,29 @@ class CORENetDataset(Dataset):
         self.normalized = self.config["normalized"]
 
         if self.normalized:
-            gut_test = torch.Tensor(self.data_set[:, self.gut_test[0]:self.gut_test[1]])
-            gut_corr = torch.Tensor(self.data_set[:, self.gut_true[0]:self.gut_true[1]])
-            weak_test = torch.Tensor(self.data_set[:, self.weak_test[0]:self.weak_test[1]])
-            gut_true = gut_test - gut_corr
-            gut = torch.cat((gut_test, gut_true))
-            self.gut_means = torch.mean(gut, dim=0)
-            self.gut_stds = torch.std(gut, dim=0)
-            self.weak_means = torch.mean(weak_test, dim=0)
-            self.weak_stds = torch.std(weak_test, dim=0)
+            if self.training:
+                gut_test = torch.Tensor(self.data_set[:, self.gut_test[0]:self.gut_test[1]])
+                gut_corr = torch.Tensor(self.data_set[:, self.gut_true[0]:self.gut_true[1]])
+                weak_test = torch.Tensor(self.data_set[:, self.weak_test[0]:self.weak_test[1]])
+                gut_true = gut_test - gut_corr
+                gut = torch.cat((gut_test, gut_true))
+                self.gut_means = torch.mean(gut, dim=0)
+                self.gut_stds = torch.std(gut, dim=0)
+                self.weak_means = torch.mean(weak_test, dim=0)
+                self.weak_stds = torch.std(weak_test, dim=0)
+                np.savez(
+                    f'{self.meta["run_directory"]}/norm_params.npz',
+                    gut_means=self.gut_means,
+                    gut_stds=self.gut_stds,
+                    weak_means=self.weak_means,
+                    weak_stds=self.weak_stds
+                )
+            else:
+                norm_params = np.load(self.config["norm_params"])
+                self.gut_means = norm_params['gut_means']
+                self.gut_stds = norm_params['gut_stds']
+                self.weak_means = norm_params['weak_means']
+                self.weak_stds = norm_params['weak_stds']
 
         self.dataset_type = self.config['dataset_type']
         if self.dataset_type == 'cmssm':
@@ -114,9 +128,12 @@ class CORENetDataset(Dataset):
         self,
         data,
     ):
-        data['gut_test'] = self.gut_means + self.gut_stds * data['gut_test']
-        data['gut_true'] = self.gut_means + self.gut_stds * data['gut_true']
-        data['weak_test'] = self.weak_means + self.weak_stds * data['weak_test']
+        if 'gut_test' in data:
+            data['gut_test'] = self.gut_means + self.gut_stds * data['gut_test']
+        if 'gut_true' in data:
+            data['gut_true'] = self.gut_means + self.gut_stds * data['gut_true']
+        if 'weak_test' in data:
+            data['weak_test'] = self.weak_means + self.weak_stds * data['weak_test']
         if 'gut_test_output' in data.keys():
             data['gut_test_output'] = self.gut_means + self.gut_stds * data['gut_test_output']
         if 'gut_true_output' in data.keys():
@@ -131,7 +148,16 @@ class CORENetDataset(Dataset):
         predictions,
         indices
     ):
-        pass
+        indices = np.array(indices, dtype=np.int64)
+        reordered_predictions = {
+            key: value[indices]
+            for key, value in predictions.items()
+        }
+        reordered_predictions = self.unnormalize(reordered_predictions)
+        np.savez(
+            f'{self.meta["run_directory"]}/{self.meta["run_name"]}.npz',
+            **reordered_predictions,
+        )
 
     def evaluate_outputs(
         self,
@@ -469,25 +495,34 @@ class CORENetDataset(Dataset):
             clusterer=DBSCAN(eps=0.3, min_samples=5),
             cover=km.Cover(n_cubes=20, perc_overlap=0.1)
         )
+        color_names = [
+            "GUT Test - Weak Latent Distance",
+            "GUT Test Reconstruction Error",
+            "Higgs Mass",
+            "Relic Dark Matter Density",
+        ]
+        for name in self.gut_variable_file_names:
+            color_names.append(name)
+        euclidean = euclidean_distances[:100000].reshape(-1, 1)
+        reconstruction = reconstruction_error[:100000].reshape(-1, 1)
+        weak_test_0 = data['weak_test'][:100000, 0].reshape(-1, 1)
+        weak_test_1 = data['weak_test'][:100000, 1].reshape(-1, 1)
+        gut_test = data['gut_test'][:100000, :]  # Already (100000, 5)
 
+        # Now, all arrays are 2D and can be horizontally stacked
+        color_values = np.hstack((
+            euclidean,         # (100000, 1)
+            reconstruction,    # (100000, 1)
+            weak_test_0,       # (100000, 1)
+            weak_test_1,       # (100000, 1)
+            gut_test           # (100000, 5)
+        ))  # Final shape: (100000, 9)
         mapper.visualize(
             graph,
             path_html=f"{self.meta['run_directory']}/gut_test_latent_space_{data_type}.html",
             title=f"GUT Test Latent Space - {data_type}",
-            color_values=np.vstack((
-                euclidean_distances[:100000],
-                reconstruction_error[:100000],
-                data['weak_test'][:100000, 0],
-                data['weak_test'][:100000, 1],
-                data['gut_test_binary'].squeeze(1)[:100000]
-            )).T,
-            color_function_name=[
-                "GUT Test - Weak Latent Distance",
-                "GUT Test Reconstruction Error",
-                "Higgs Mass",
-                "Relic Dark Matter Density",
-                "Latent Binary"
-            ]
+            color_values=color_values,
+            color_function_name=color_names
         )
 
         """Generate Correlation projections"""

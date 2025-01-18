@@ -42,7 +42,7 @@ class ResidualBlock(nn.Module):
     ):
         super(ResidualBlock, self).__init__()
         self.linear1 = nn.Linear(
-            in_features, 
+            in_features,
             out_features,
             bias=False
         )
@@ -63,8 +63,8 @@ class ResidualBlock(nn.Module):
         if in_features != out_features:
             self.shortcut = nn.Sequential(
                 nn.Linear(
-                    in_features, 
-                    out_features, 
+                    in_features,
+                    out_features,
                     bias=False
                 ),
                 nn.BatchNorm1d(out_features)
@@ -131,13 +131,13 @@ class CORENet(GenericModel):
         """
         Construction of encoder layer. This takes GUT -> latent space
         """
-        self.encoder_dict = OrderedDict()
+        _encoder_dict = OrderedDict()
 
         input_dimension = self.input_dimension
 
         # iterate over the encoder
         for ii, dimension in enumerate(self.config['encoder_dimensions']):
-            self.encoder_dict[f'encoder_{ii}'] = ResidualBlock(
+            _encoder_dict[f'encoder_{ii}'] = ResidualBlock(
                 in_features=input_dimension,
                 out_features=dimension,
                 activation=self.config['encoder_activation'],
@@ -145,44 +145,36 @@ class CORENet(GenericModel):
                 dropout=self.config['encoder_dropout']
             )
             input_dimension = dimension
-        self.encoder_dict = nn.ModuleDict(self.encoder_dict)
+        self.encoder_dict = nn.ModuleDict(_encoder_dict)
 
     def construct_latent_space(self):
         """
         Construction of additional layers for projection to the latent space.
         """
-        self.latent_dict = OrderedDict()
+        _latent_dict = OrderedDict()
         dimension = self.config["encoder_dimensions"][-1]
 
         # create the latent space
-        self.latent_dict['latent_layer'] = nn.Linear(
+        _latent_dict['latent_layer'] = nn.Linear(
             in_features=dimension,
             out_features=self.config['latent_dimension'],
             bias=False
         )
-        self.latent_dict['latent_norm'] = nn.BatchNorm1d(
+        _latent_dict['latent_norm'] = nn.BatchNorm1d(
             num_features=self.config['latent_dimension']
         )
-        self.latent_dict['latent_binary'] = nn.Linear(
-            in_features=dimension,
-            out_features=1,
-            bias=False
-        )
-        self.latent_dict['latent_binary_activation'] = activations['sigmoid']()
-        self.latent_dict = nn.ModuleDict(self.latent_dict)
+        self.latent_dict = nn.ModuleDict(_latent_dict)
 
     def construct_decoder(self):
         """
         Construction of the decoder which goes from latent -> GUT.
         """
-        self.decoder_dict = OrderedDict()
+        _decoder_dict = OrderedDict()
         input_dimension = self.config['latent_dimension']
-        if self.config['chuncc']:
-            input_dimension += 1
 
         # iterate over the decoder
         for ii, dimension in enumerate(self.config['decoder_dimensions']):
-            self.decoder_dict[f'decoder_{ii}'] = ResidualBlock(
+            _decoder_dict[f'decoder_{ii}'] = ResidualBlock(
                 in_features=input_dimension,
                 out_features=dimension,
                 activation=self.config['decoder_activation'],
@@ -190,36 +182,36 @@ class CORENet(GenericModel):
                 dropout=self.config['decoder_dropout']
             )
             input_dimension = dimension
-        self.decoder_dict = nn.ModuleDict(self.decoder_dict)
+        self.decoder_dict = nn.ModuleDict(_decoder_dict)
 
     def construct_output(self):
         """
         Construction of final output projection from decoder
         """
-        self.output_dict = OrderedDict()
+        _output_dict = OrderedDict()
         dimension = self.config["decoder_dimensions"][-1]
         # create the output
-        self.output_dict['output'] = nn.Linear(
+        _output_dict['output'] = nn.Linear(
             in_features=dimension,
             out_features=self.input_dimension,
             bias=False
         )
 
         if self.config['output_activation'] != 'linear':
-            self.output_dict['output_activation'] = activations[
+            _output_dict['output_activation'] = activations[
                 self.config['output_activation']
             ](**self.config['output_activation_params'])
-        self.output_dict = nn.ModuleDict(self.output_dict)
+        self.output_dict = nn.ModuleDict(_output_dict)
 
     def construct_core(self):
         """
         Construction of CORE network which takes weak + latent -> latent.
         """
-        self.core_dict = OrderedDict()
+        _core_dict = OrderedDict()
         # create the core dictionary
         input_dimension = self.config['core_input_dimension']
         for ii, dimension in enumerate(self.config['core_dimensions']):
-            self.core_dict[f'core_{ii}'] = ResidualBlock(
+            _core_dict[f'core_{ii}'] = ResidualBlock(
                 in_features=input_dimension,
                 out_features=dimension,
                 activation=self.config['core_activation'],
@@ -228,12 +220,12 @@ class CORENet(GenericModel):
             )
             input_dimension = dimension
 
-        self.core_dict['latent_layer'] = nn.Linear(
+        _core_dict['latent_layer'] = nn.Linear(
             in_features=dimension,
             out_features=self.config['latent_dimension'],
             bias=False
         )
-        self.core_dict = nn.ModuleDict(self.core_dict)
+        self.core_dict = nn.ModuleDict(_core_dict)
 
     def forward(
         self,
@@ -273,25 +265,10 @@ class CORENet(GenericModel):
         for layer in self.core_dict.values():
             weak_test_latent = layer(weak_test_latent)
 
-        """Apply the latent binary"""
-        gut_test_binary = self.latent_dict['latent_binary'](gut_test)
-        gut_test_binary = self.latent_dict['latent_binary_activation'](gut_test_binary)
-        gut_true_binary = self.latent_dict['latent_binary'](gut_true)
-        gut_true_binary = self.latent_dict['latent_binary_activation'](gut_true_binary)
-        weak_test_binary = torch.all(gut_true == gut_true, dim=1).int().unsqueeze(1)
-
         """Save the latent values"""
         data['gut_test_latent'] = gut_test_latent
         data['gut_true_latent'] = gut_true_latent
         data['weak_test_latent'] = weak_test_latent
-        data['gut_test_binary'] = gut_test_binary
-        data['gut_true_binary'] = gut_true_binary
-        data['weak_test_binary'] = weak_test_binary
-
-        if self.config['chuncc']:
-            gut_test_latent = torch.cat((gut_test_latent, gut_test_binary), dim=1)
-            gut_true_latent = torch.cat((gut_true_latent, gut_true_binary), dim=1)
-            weak_test_latent = torch.cat((weak_test_latent, weak_test_binary), dim=1)
 
         gut_test = gut_test_latent
         gut_true = gut_true_latent

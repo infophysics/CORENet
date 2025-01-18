@@ -48,8 +48,6 @@ class MachineLearningModule(GenericModule):
         self.meta['trainer'] = None
         self.meta['model_analyzer'] = None
 
-        self.parse_inference()
-
     def check_config(self):
         if "model" not in self.config.keys():
             self.logger.warning('"model" section not specified in config!')
@@ -77,8 +75,6 @@ class MachineLearningModule(GenericModule):
     ):
         """
         """
-        if self.mode == "linear_evaluation":
-            return
         if "model" not in self.config.keys():
             self.logger.warn("no model in config file.")
             return
@@ -188,13 +184,12 @@ class MachineLearningModule(GenericModule):
             self.logger.warn("no inference in config file.")
             return
         self.logger.info("configuring inference.")
-        training_config = self.config['training']
-        if self.meta['trainer'] is None:
-            self.meta['trainer'] = Trainer(
-                self.name,
-                training_config,
-                meta=self.meta
-            )
+        inference_config = self.config['inference']
+        self.meta['trainer'] = Trainer(
+            self.name,
+            inference_config,
+            meta=self.meta
+        )
 
         if "layers" in self.config["inference"].keys():
             for layer in self.config["inference"]["layers"]:
@@ -229,7 +224,7 @@ class MachineLearningModule(GenericModule):
             progress_bar=self.config['training']['progress_bar'],
             rewrite_bar=self.config['training']['rewrite_bar'],
             save_predictions=self.config['training']['save_predictions'],
-            no_timing=self.config['training']['no_timing'],
+            prediction_outputs=self.config['training']['prediction_outputs'],
             skip_metrics=self.config['training']['skip_metrics']
         )
         if self.meta['model_analyzer'] is not None:
@@ -237,11 +232,12 @@ class MachineLearningModule(GenericModule):
 
     def run_inference(self):
         self.parse_model()
+        self.parse_inference()
         self.module_data_product['predictions'] = self.meta['trainer'].inference(
             dataset_type=self.config['inference']['dataset_type'],
             layers=self.config['inference']['layers'],
-            outputs=self.config['inference']['outputs'],
             progress_bar=self.config['inference']['progress_bar'],
             rewrite_bar=self.config['inference']['rewrite_bar'],
-            save_predictions=self.config['inference']['save_predictions']
+            save_predictions=self.config['inference']['save_predictions'],
+            prediction_outputs=self.config['inference']['prediction_outputs']
         )

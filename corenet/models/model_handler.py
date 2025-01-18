@@ -2,6 +2,7 @@
 Container for models
 """
 import os
+import torch
 import importlib.util
 import sys
 import inspect
@@ -95,59 +96,47 @@ class ModelHandler:
                 if issubclass(custom_class, GenericModel):
                     self.available_models[name] = custom_class
 
+    def load_model_from_config(self):
+        model_type = self.config["model_type"]
+        model_params = self.config["load_model"]
+        checkpoint = torch.load(model_params)
+        model_config = checkpoint['model_config']
+        if model_type not in self.available_models.keys():
+            self.logger.error(
+                f"specified model '{model_type}' is not an available type! " +
+                f"Available types:\n{self.available_models.keys()}"
+            )
+        self.model = self.available_models[model_type](
+            model_type, model_config, self.meta
+        )
+        self.model.load_model(checkpoint)
+        self.logger.info(f'added model "{model_type}" to ModelHandler.')
+
     def process_config(self):
         # list of available criterions
         self.collect_models()
         # check config
-        if "custom_model_file" in self.config.keys():
-            if os.path.isfile(self.config["custom_model_file"]):
-                try:
-                    self.load_model(self.config["custom_model_file"])
-                    self.logger.info(f'added custom model from file {self.config["custom_model_file"]}.')
-                except Exception:
-                    self.logger.error(
-                        f'loading classes from file {self.config["custom_model_file"]} failed!'
-                    )
-            else:
-                self.logger.error(f'custom_model_file {self.config["custom_model_file"]} not found!')
-        if "model_type" not in self.config.keys():
-            self.logger.warn('model_type not specified in config! Setting to "single"!')
-            self.model_type = 'single'
+        if "load_model" in self.config.keys():
+            return self.load_model_from_config()
         # process models
         for item in self.config.keys():
-            if item == "custom_model_file" or item == "load_model":
-                continue
-            if item == "model_type":
-                self.model_type = self.config[item]
-                continue
             # check that model exists
             if item not in self.available_models.keys():
                 self.logger.error(
                     f"specified model '{item}' is not an available type! " +
                     f"Available types:\n{self.available_models.keys()}"
                 )
-        self.models = {}
-        self.batch_model = {}
-        for item in self.config.keys():
-            if item == "custom_model_file" or item == "load_model" or item == "model_type":
-                continue
-            self.models[item] = self.available_models[item](
+            self.model = self.available_models[item](
                 item, self.config[item], self.meta
             )
             self.logger.info(f'added model "{item}" to ModelHandler.')
-        if self.model_type == 'single':
-            if len(self.models.keys()) > 1:
-                self.logger.error('model_type set to "single", but multiple models have been registered!')
-            else:
-                self.model = list(self.models.values())[0]
 
     def set_device(
         self,
         device
     ):
         self.logger.info(f'setting device to "{device}".')
-        for name, model in self.models.items():
-            model.set_device(device)
+        self.model.set_device(device)
         self.device = device
 
     def add_model(
@@ -165,61 +154,13 @@ class ModelHandler:
             )
 
     def train(self):
-        if self.model_type == 'single':
-            self.model.train()
-        else:
-            for name, model in self.models.items():
-                try:
-                    model.train()
-                except Exception:
-                    self.logger.warn(f'problem with setting train for model {name}')
+        self.model.train()
 
     def eval(self):
-        if self.model_type == 'single':
-            self.model.eval()
-        else:
-            for name, model in self.models.items():
-                try:
-                    model.eval()
-                except Exception:
-                    self.logger.warn(f'problem with setting eval for model {name}')
-
-    def contrastive_learning(self):
-        if self.model_type == 'single':
-            self.model.contrastive_learning()
-        else:
-            for name, model in self.models.items():
-                try:
-                    model.contrastive_learning()
-                except Exception:
-                    self.logger.warn(f'problem with setting contrastive learning for model {name}')
-
-    def linear_evaluation(self):
-        if self.model_type == 'single':
-            self.model.linear_evaluation()
-        else:
-            for name, model in self.models.items():
-                try:
-                    model.linear_evaluation()
-                except Exception:
-                    self.logger.warn(f'problem with setting linear_evaluation for model {name}')
+        self.model.eval()
 
     def parameters(self):
-        if self.model_type == 'single':
-            return self.model.parameters()
-        else:
-            parameters = []
-            for name, model in self.models.items():
-                parameters += model.parameters()
-            return parameters
+        return self.model.parameters()
 
     def forward_views(self):
-        if self.model_type == 'single':
-            return self.model.forward_views()
-        else:
-            forward_views = {}
-            for name, model in self.models.items():
-                model_views = model.forward_views()
-                for view_name, view in model_views.items():
-                    forward_views[view_name] = view
-            return forward_views
+        return self.model.forward_views()

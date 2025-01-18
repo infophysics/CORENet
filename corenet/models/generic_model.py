@@ -142,19 +142,13 @@ class GenericModel(nn.Module):
 
     def load_model(
         self,
-        model_file:   str = ''
+        checkpoint:   str = ''
     ):
-        self.logger.info(f"attempting to load model checkpoint from file {model_file}.")
         try:
-            checkpoint = torch.load(model_file)
-            self.config = checkpoint['model_config']
-            self.construct_model()
-            # register hooks
-            self.register_forward_hooks()
             self.load_state_dict(checkpoint['model_state_dict'])
         except Exception as e:
-            self.logger.error(f"unable to load model file {model_file}: {e}.")
-            raise ValueError(f"unable to load model file {model_file}: {e}.")
+            self.logger.error(f"unable to load model file: {e}.")
+            raise ValueError(f"unable to load model file: {e}.")
         self.logger.info("successfully loaded model checkpoint.")
 
     def _dummy_input(self):

@@ -84,7 +84,10 @@ class CORENetRunner:
         # add unique datetime
         now = get_datetime()
         self.run_name += f"_{now}"
-        self.local_run = self.local_scratch + '/' + self.run_name
+        if "local_run" in self.config['module']:
+            self.local_run = self.config['module']['local_run']
+        else:
+            self.local_run = self.local_scratch + '/' + self.run_name
 
         # create run directory
         if not os.path.isdir(self.local_run):
