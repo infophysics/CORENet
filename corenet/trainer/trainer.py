@@ -6,27 +6,14 @@ import numpy as np
 import os
 from tqdm import tqdm
 from corenet.utils.logger import Logger
-from corenet.losses import LossHandler
 from corenet.models import ModelHandler
-from corenet.metrics import MetricHandler
-from corenet.optimizers import Optimizer
-from corenet.utils.timing import Timers
-from corenet.utils.memory import MemoryTrackers
-from corenet.utils.callbacks import CallbackHandler
-from corenet.utils.callbacks import TimingCallback, MemoryTrackerCallback
 
 
 class Trainer:
     """
     This class is an attempt to reduce code rewriting by putting together
     a set of functions that do everything that we could need with
-    respect to training.  There are a few objects which must be passed
-    to the trainer, which include:
-        (a) model     - an object which inherits from nn.Module
-        (b) criterion - an object which has a defined function called "loss"
-        (c) optimizer - some choice of optimizer, e.g. Adam
-        (d) metrics   - (optional) an object which has certain defined functions
-        (e) callbacks - (optional) an object which has certain defined functions
+    respect to training.
     """
     def __init__(
         self,
@@ -65,10 +52,8 @@ class Trainer:
         self.process_criterion()
         self.process_optimizer()
         self.process_metrics()
-        self.process_callbacks()
-        self.process_consistency_check()
 
-    def process_model(self):
+    def process_model(self): 
         if "model" not in self.meta:
             self.logger.error('no model specified in meta!')
         if not isinstance(self.meta['model'], ModelHandler):
@@ -106,34 +91,6 @@ class Trainer:
         if self.metrics is not None:
             self.metrics.set_device(self.device)
 
-    def process_callbacks(self):
-        self.callbacks = self.meta['callbacks']
-        if self.callbacks is None:
-            # add generic callbacks
-            self.callbacks = CallbackHandler(
-                name="default",
-                meta=self.meta
-            )
-        # add timing info
-        self.timers = Timers(gpu=self.gpu)
-        self.timer_callback = TimingCallback(
-            output_dir=self.meta['timing_dir'],
-            timers=self.timers
-        )
-        self.callbacks.add_callback(self.timer_callback)
-
-        # add memory info
-        self.memory_trackers = MemoryTrackers(gpu=self.gpu)
-        self.memory_callback = MemoryTrackerCallback(
-            output_dir=self.meta['memory_dir'],
-            memory_trackers=self.memory_trackers
-        )
-        self.callbacks.add_callback(self.memory_callback)
-
-    def process_consistency_check(self):
-        # run consistency check
-        self.logger.info("running consistency check...")
-
     def save_checkpoint(
         self,
         epoch:  int = 99999
@@ -164,14 +121,6 @@ class Trainer:
             self.logger.error(f"device: '{self.device}' and model device: '{self.criterion.device}' are different!")
 
         self.model.save_model(flag='init')
-        # setting values in callbacks
-        self.callbacks.set_device(self.device)
-        self.callbacks.set_training_info(
-            epochs,
-            self.meta['loader'].num_train_batches,
-            self.meta['loader'].num_validation_batches,
-            self.meta['loader'].num_test_batches
-        )
         if not skip_metrics and self.metrics is None:
             self.logger.error('skip_metrics set to false in config, but no metrics are specified!')
         # Training
@@ -216,56 +165,13 @@ class Trainer:
             """
             Setup timing/memory information for epoch.
             """
-            self.timers.timers['epoch_training'].start()
-            self.memory_trackers.memory_trackers['epoch_training'].start()
-            self.timers.timers['training_data'].start()
-            self.memory_trackers.memory_trackers['training_data'].start()
             for ii, data in training_loop:
                 train_iteration += 1
-                self.memory_trackers.memory_trackers['training_data'].end()
-                self.timers.timers['training_data'].end()
-                # zero the parameter gradients
-                """
-                There are choices here, either one can do:
-                    model.zero_grad() or
-                    optimizer.zero_grad() or
-                    for param in model.parameters():        <== optimal choice
-                        param.grad = None
-                """
-                self.timers.timers['training_zero_grad'].start()
-                self.memory_trackers.memory_trackers['training_zero_grad'].start()
                 self.meta['optimizer'].zero_grad()
-                self.memory_trackers.memory_trackers['training_zero_grad'].end()
-                self.timers.timers['training_zero_grad'].end()
-                # get the network output
-                """
-                The forward call takes in the entire data
-                stream, which could have multiple inputs needed.
-                It's up to the model to determine what to do with it.
-                The forward call of the model could send out
-                multiple output tensors, depending on the application
-                (such as in an AE where the latent space values are
-                important). It's up to the loss function to know what to expect.
-                """
-                self.timers.timers['training_forward'].start()
-                self.memory_trackers.memory_trackers['training_forward'].start()
                 data = self.model(data)
-                self.memory_trackers.memory_trackers['training_forward'].end()
-                self.timers.timers['training_forward'].end()
-
-                # compute loss
-                self.timers.timers['training_loss'].start()
-                self.memory_trackers.memory_trackers['training_loss'].start()
                 data = self.criterion.loss(data)
                 if self.grad_norm:
                     data = self.criterion.grad_norm_loss(data)
-                self.memory_trackers.memory_trackers['training_loss'].end()
-                self.timers.timers['training_loss'].end()
-
-                # backprop
-                self.timers.timers['training_loss_backward'].start()
-                self.memory_trackers.memory_trackers['training_loss_backward'].start()
-                if self.grad_norm:
                     data['loss'].backward(retain_graph=True)
                     self.criterion.update_task_weights(
                         data['grad_norm_loss'],
@@ -273,28 +179,10 @@ class Trainer:
                     )
                 else:
                     data['loss'].backward()
-                self.memory_trackers.memory_trackers['training_loss_backward'].end()
-                self.timers.timers['training_loss_backward'].end()
-
-                # record backprop timing
-                self.timers.timers['training_backprop'].start()
-                self.memory_trackers.memory_trackers['training_backprop'].start()
                 self.optimizer.step()
-                self.memory_trackers.memory_trackers['training_backprop'].end()
-                self.timers.timers['training_backprop'].end()
-
-                # update progress bar
-                self.timers.timers['training_progress'].start()
-                self.memory_trackers.memory_trackers['training_progress'].start()
                 if progress_bar:
                     training_loop.set_description(f"Training: Epoch [{epoch+1}/{epochs}]")
                     training_loop.set_postfix_str(f"loss={data['loss'].item():.2e}")
-                self.memory_trackers.memory_trackers['training_progress'].end()
-                self.timers.timers['training_progress'].end()
-
-                self.timers.timers['training_data'].start()
-                self.memory_trackers.memory_trackers['training_data'].start()
-
                 for key, value in data.items():
                     if ("loss" in key):
                         if key not in epoch_train_losses:
@@ -303,17 +191,9 @@ class Trainer:
                         self.meta['tensorboard'].add_scalar(key + '_train', value, train_iteration)
             for key, value in epoch_train_losses.items():
                 self.meta['tensorboard'].add_scalar(key + '_train_avg', np.mean(value), epoch)
-
-            # update timing info
-            self.memory_trackers.memory_trackers['epoch_training'].end()
-            self.timers.timers['epoch_training'].end()
             if not skip_metrics:
                 self.model.eval()
                 with torch.no_grad():
-                    """
-                    Run through a metric loop if there are any metrics
-                    defined.
-                    """
                     if self.metrics is not None:
                         if progress_bar:
                             metrics_training_loop = tqdm(
@@ -327,29 +207,14 @@ class Trainer:
                             metrics_training_loop = enumerate(self.meta['loader'].train_loader, 0)
                         self.metrics.reset_batch()
                         for ii, data in metrics_training_loop:
-                            # update metrics
-                            self.timers.timers['training_metrics'].start()
-                            self.memory_trackers.memory_trackers['training_metrics'].start()
                             data = self.model(data)
                             self.metrics.update(data, train_type="train")
-                            self.memory_trackers.memory_trackers['training_metrics'].end()
-                            self.timers.timers['training_metrics'].end()
                             if progress_bar:
                                 metrics_training_loop.set_description(f"Training Metrics: Epoch [{epoch+1}/{epochs}]")
-
-                        """Get metrics and report to tensorboard"""
                         data = self.metrics.compute(data)
                         for key, value in data.items():
                             if ("metric" in key):
                                 self.meta['tensorboard'].add_scalar(key + '_train', value, epoch)
-
-            # evaluate callbacks
-            self.timers.timers['training_callbacks'].start()
-            self.memory_trackers.memory_trackers['training_callbacks'].start()
-            self.callbacks.evaluate_epoch(train_type='train')
-            self.memory_trackers.memory_trackers['training_callbacks'].end()
-            self.timers.timers['training_callbacks'].end()
-
             """
             Validation stage.
             Setup the progress bar for the validation loop.
@@ -364,46 +229,15 @@ class Trainer:
                 )
             else:
                 validation_loop = enumerate(self.meta['loader'].validation_loader, 0)
-            # make sure to set model to eval() during validation!
             self.model.eval()
             with torch.no_grad():
-                """
-                Setup timing information for epoch.
-                """
-                self.timers.timers['epoch_validation'].start()
-                self.memory_trackers.memory_trackers['epoch_validation'].start()
-                self.timers.timers['validation_data'].start()
-                self.memory_trackers.memory_trackers['validation_data'].start()
                 for ii, data in validation_loop:
                     val_iteration += 1
-                    self.memory_trackers.memory_trackers['validation_data'].end()
-                    self.timers.timers['validation_data'].end()
-                    # get the network output
-                    self.timers.timers['validation_forward'].start()
-                    self.memory_trackers.memory_trackers['validation_forward'].start()
                     data = self.model(data)
-                    self.memory_trackers.memory_trackers['validation_forward'].end()
-                    self.timers.timers['validation_forward'].end()
-
-                    # compute loss
-                    self.timers.timers['validation_loss'].start()
-                    self.memory_trackers.memory_trackers['validation_loss'].start()
                     data = self.criterion.loss(data)
-                    self.memory_trackers.memory_trackers['validation_loss'].end()
-                    self.timers.timers['validation_loss'].end()
-
-                    # update progress bar
-                    self.timers.timers['validation_progress'].start()
-                    self.memory_trackers.memory_trackers['validation_progress'].start()
                     if progress_bar:
                         validation_loop.set_description(f"Validation: Epoch [{epoch+1}/{epochs}]")
                         validation_loop.set_postfix_str(f"loss={data['loss'].item():.2e}; patience={patience}/{self.patience}")
-                    self.memory_trackers.memory_trackers['validation_progress'].end()
-                    self.timers.timers['validation_progress'].end()
-
-                    self.timers.timers['validation_data'].start()
-                    self.memory_trackers.memory_trackers['validation_data'].start()
-
                     for key, value in data.items():
                         if ("loss" in key):
                             if key not in epoch_val_losses:
@@ -412,15 +246,6 @@ class Trainer:
                             self.meta['tensorboard'].add_scalar(key + '_val', value, val_iteration)
                 for key, value in epoch_val_losses.items():
                     self.meta['tensorboard'].add_scalar(key + '_val_avg', np.mean(value), epoch)
-
-                # update timing info
-                self.memory_trackers.memory_trackers['epoch_validation'].end()
-                self.timers.timers['epoch_validation'].end()
-
-                """
-                Run through a metric loop if there are any metrics
-                defined.
-                """
                 if not skip_metrics:
                     if self.metrics is not None:
                         if progress_bar:
@@ -435,33 +260,17 @@ class Trainer:
                             metrics_validation_loop = enumerate(self.meta['loader'].validation_loader, 0)
                         self.metrics.reset_batch()
                         for ii, data in metrics_validation_loop:
-                            # update metrics
-                            self.timers.timers['validation_metrics'].start()
-                            self.memory_trackers.memory_trackers['validation_metrics'].start()
                             data = self.model(data)
                             self.metrics.update(data, train_type="validation")
-                            self.memory_trackers.memory_trackers['validation_metrics'].end()
-                            self.timers.timers['validation_metrics'].end()
                             if progress_bar:
                                 metrics_validation_loop.set_description(f"Validation Metrics: Epoch [{epoch+1}/{epochs}]")
-
                         """Get metrics and report to tensorboard"""
                         data = self.metrics.compute(data)
                         for key, value in data.items():
                             if ("metric" in key):
                                 self.meta['tensorboard'].add_scalar(key + '_val', value, epoch)
-
-            # evaluate callbacks
-            self.timers.timers['validation_callbacks'].start()
-            self.memory_trackers.memory_trackers['validation_callbacks'].start()
-            self.callbacks.evaluate_epoch(train_type='validation')
-            self.memory_trackers.memory_trackers['validation_callbacks'].end()
-            self.timers.timers['validation_callbacks'].end()
-
-            # save weights if at checkpoint step
             if epoch % checkpoint == 0:
                 self.save_checkpoint(epoch)
-            # free up gpu resources
             torch.cuda.empty_cache()
 
             """Check early stopping conditions"""
@@ -472,16 +281,9 @@ class Trainer:
                 early_stopping_loss = np.mean(epoch_val_losses['loss'])
             if patience > self.patience:
                 break
-
-        # evaluate epoch callbacks
-        self.callbacks.evaluate_training()
         self.logger.info("training finished.")
         """
         Testing stage.
-        Setup the progress bar for the testing loop.
-        We do not have timing information for the test
-        loop stage, since it is generally quick
-        and doesn't need to be optimized for any reason.
         """
         if progress_bar:
             test_loop = tqdm(
@@ -501,41 +303,28 @@ class Trainer:
             test_iteration = 0
             for ii, data in test_loop:
                 test_iteration += 1
-                # get the network output
                 data = self.model(data)
-
-                # compute loss
                 data = self.criterion.loss(data)
-
-                # update metrics
                 if self.metrics is not None:
                     self.metrics.update(data, train_type="test")
-
-                # update progress bar
                 if progress_bar:
                     test_loop.set_description(f"Testing: Batch [{ii+1}/{self.meta['loader'].num_test_batches}]")
                     test_loop.set_postfix_str(f"loss={data['loss'].item():.2e}")
-
                 for key, value in data.items():
                     if ("loss" in key):
                         if key not in test_losses:
                             test_losses[key] = []
                         test_losses[key].append(value.detach().cpu())
                         self.meta['tensorboard'].add_scalar(key + '_test', value, test_iteration)
-
             for key, value in test_losses.items():
-                self.meta['tensorboard'].add_scalar(key + '_test_avg', torch.mean(torch.tensor(value)), epoch)
+                self.meta['tensorboard'].add_scalar(key + '_test_avg', torch.mean(torch.tensor(value)), 0)
 
             """Get metrics and report to tensorboard"""
             if self.metrics is not None:
                 data = self.metrics.compute(data)
                 for key, value in data.items():
                     if ("metric" in key):
-                        self.meta['tensorboard'].add_scalar(key + '_test', value, epoch)
-
-            # evaluate callbacks
-            self.callbacks.evaluate_epoch(train_type='test')
-        self.callbacks.evaluate_testing()
+                        self.meta['tensorboard'].add_scalar(key + '_test', value, 0)
         # save the final model
         self.model.save_model(flag='trained')
 
@@ -749,6 +538,5 @@ class Trainer:
                 predictions,
                 np.array(inference_indices, dtype=object)
             )
-        self.callbacks.evaluate_inference()
         self.logger.info("returning predictions.")
         return predictions

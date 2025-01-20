@@ -31,53 +31,53 @@ class LatentDistanceMetric(GenericMetric):
         self.num_projections = num_projections
 
         self.gut_test = torch.empty(
-            size=(0, 5),
+            size=(0, len(self.meta['dataset'].gut_variable_names)),
             dtype=torch.float, device='cpu'
         )
         self.gut_test_output = torch.empty(
-            size=(0, 5),
+            size=(0, len(self.meta['dataset'].gut_variable_names)),
             dtype=torch.float, device='cpu'
         )
         self.gut_true = torch.empty(
-            size=(0, 5),
+            size=(0, len(self.meta['dataset'].gut_variable_names)),
             dtype=torch.float, device='cpu'
         )
         self.gut_true_output = torch.empty(
-            size=(0, 5),
+            size=(0, len(self.meta['dataset'].gut_variable_names)),
             dtype=torch.float, device='cpu'
         )
         self.gut_true_latent = torch.empty(
-            size=(0, 5),
+            size=(0, self.meta['model'].model.config['latent_dimension']),
             dtype=torch.float, device='cpu'
         )
         self.weak_test_latent = torch.empty(
-            size=(0, 5),
+            size=(0, self.meta['model'].model.config['latent_dimension']),
             dtype=torch.float, device='cpu'
         )
 
     def reset_batch(self):
         self.gut_test = torch.empty(
-            size=(0, 5),
+            size=(0, len(self.meta['dataset'].gut_variable_names)),
             dtype=torch.float, device='cpu'
         )
         self.gut_test_output = torch.empty(
-            size=(0, 5),
+            size=(0, len(self.meta['dataset'].gut_variable_names)),
             dtype=torch.float, device='cpu'
         )
         self.gut_true = torch.empty(
-            size=(0, 5),
+            size=(0, len(self.meta['dataset'].gut_variable_names)),
             dtype=torch.float, device='cpu'
         )
         self.gut_true_output = torch.empty(
-            size=(0, 5),
+            size=(0, len(self.meta['dataset'].gut_variable_names)),
             dtype=torch.float, device='cpu'
         )
         self.gut_true_latent = torch.empty(
-            size=(0, 5),
+            size=(0, self.meta['model'].model.config['latent_dimension']),
             dtype=torch.float, device='cpu'
         )
         self.weak_test_latent = torch.empty(
-            size=(0, 5),
+            size=(0, self.meta['model'].model.config['latent_dimension']),
             dtype=torch.float, device='cpu'
         )
 

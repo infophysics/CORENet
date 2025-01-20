@@ -1,5 +1,5 @@
 """
-Container for generic callbacks
+Container for generic metrics
 """
 import os
 import importlib.util

@@ -327,7 +327,7 @@ class CORENet(GenericModel):
             'gut_test': torch.randn(10, self.input_dimension).to(self.device),
             'gut_true': torch.randn(10, self.input_dimension).to(self.device),
             'weak_test': torch.randn(
-                10, self.config['core_input_dimension'] - self.input_dimension
+                10, self.config['core_input_dimension'] - self.config['latent_dimension']
             ).to(self.device)
         }
         self.to(self.device)

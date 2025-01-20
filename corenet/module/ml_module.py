@@ -8,7 +8,6 @@ from corenet.losses import LossHandler
 from corenet.optimizers import Optimizer
 from corenet.metrics import MetricHandler
 from corenet.trainer import Trainer
-from corenet.utils.callbacks import CallbackHandler
 
 
 class MachineLearningModule(GenericModule):
@@ -44,7 +43,6 @@ class MachineLearningModule(GenericModule):
         self.meta['criterion'] = None
         self.meta['optimizer'] = None
         self.meta['metrics'] = None
-        self.meta['callbacks'] = None
         self.meta['trainer'] = None
         self.meta['model_analyzer'] = None
 
@@ -61,8 +59,6 @@ class MachineLearningModule(GenericModule):
                 self.logger.error('"optimizer" section not specified in config!')
             if "metrics" not in self.config.keys():
                 self.logger.warn('"metrics" section not specified in config!')
-            if "callbacks" not in self.config.keys():
-                self.logger.warn('"callbacks" section not specified in config!')
             if "training" not in self.config.keys():
                 self.logger.error('"training" section not specified in config!')
 
@@ -137,30 +133,6 @@ class MachineLearningModule(GenericModule):
             meta=self.meta
         )
 
-    def parse_callbacks(
-        self,
-    ):
-        """
-        """
-        if "callbacks" not in self.config.keys():
-            self.logger.warn("no callbacks in config file.")
-            return
-        self.logger.info("configuring callbacks.")
-        callbacks_config = self.config['callbacks']
-        if callbacks_config is None:
-            self.logger.warn("no callbacks specified.")
-        else:
-            for callback in callbacks_config.keys():
-                if callbacks_config[callback] is None:
-                    callbacks_config[callback] = {}
-                callbacks_config[callback]['criterion_handler'] = self.meta['criterion']
-                callbacks_config[callback]['metrics_handler'] = self.meta['metrics']
-        self.meta['callbacks'] = CallbackHandler(
-            self.name,
-            callbacks_config,
-            meta=self.meta
-        )
-
     def parse_training(
         self,
     ):
@@ -216,7 +188,6 @@ class MachineLearningModule(GenericModule):
         self.parse_loss()
         self.parse_optimizer()
         self.parse_metrics()
-        self.parse_callbacks()
         self.parse_training()
         self.module_data_product['predictions'] = self.meta['trainer'].train(
             epochs=self.config['training']['epochs'],
