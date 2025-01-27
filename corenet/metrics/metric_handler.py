@@ -29,9 +29,9 @@ class MetricHandler:
         else:
             self.device = 'cpu'
         if meta['verbose']:
-            self.logger = Logger(self.name, output="both", file_mode="w")
+            self.logger = Logger(self.name)
         else:
-            self.logger = Logger(self.name, level='warning', file_mode="w")
+            self.logger = Logger(self.name)
         self.labels = labels
 
         if bool(config) and len(metrics) != 0:

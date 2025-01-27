@@ -24,7 +24,7 @@ class GenericLoss:
         meta:           dict = {}
     ):
         self.name = name
-        self.logger = Logger(self.name, output="both", file_mode="w")
+        self.logger = Logger(self.name)
         self.alpha = alpha
         self.meta = meta
         if "device" in self.meta:

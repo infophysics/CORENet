@@ -51,7 +51,7 @@ class CORENetRunner:
         os.environ['LOCAL_CORENET'] = self.local_corenet
         os.environ['LOCAL_DATA'] = self.local_data
 
-        self.logger = Logger('corenet_runner', output="both", file_mode="w")
+        self.logger = Logger('corenet_runner')
 
         # begin parsing configuration file
         if self.config_file is None:

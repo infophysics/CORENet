@@ -8,10 +8,9 @@ from torch.utils.data import Dataset
 import kmapper as km
 from sklearn.manifold import TSNE
 from sklearn.cluster import DBSCAN
-from sklearn.metrics import pairwise_distances
 
 from corenet.utils.utils import generate_plot_grid
-from corenet.utils.utils import fig_to_array, compute_node_distances
+from corenet.utils.utils import fig_to_array
 
 
 corenet_dataset_config = {

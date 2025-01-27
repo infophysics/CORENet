@@ -27,9 +27,9 @@ class Loader:
         else:
             self.device = 'cpu'
         if meta['verbose']:
-            self.logger = Logger(self.name, output="both", file_mode="w")
+            self.logger = Logger(self.name)
         else:
-            self.logger = Logger(self.name, level='warning', file_mode="w")
+            self.logger = Logger(self.name)
         self.logger.info("constructing corenet loader.")
 
         self.process_config()

@@ -31,7 +31,7 @@ class GenericModel(nn.Module):
         super(GenericModel, self).__init__()
         self.name = name
         self.config = config
-        self.logger = Logger(self.name, file_mode='w')
+        self.logger = Logger(self.name)
         self.logger.info("configuring model.")
 
         # forward view maps

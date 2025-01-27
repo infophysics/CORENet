@@ -28,9 +28,9 @@ class GenericModule:
         else:
             self.device = 'cpu'
         if meta['verbose']:
-            self.logger = Logger(name, output="both", file_mode="w")
+            self.logger = Logger(name)
         else:
-            self.logger = Logger(name, file_mode="w")
+            self.logger = Logger(name)
 
         self.consumes = [None]
         self.produces = [None]

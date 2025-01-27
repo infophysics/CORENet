@@ -30,9 +30,9 @@ class ModelHandler:
         else:
             self.device = 'cpu'
         if meta['verbose']:
-            self.logger = Logger(self.name, output="both", file_mode="w")
+            self.logger = Logger(self.name)
         else:
-            self.logger = Logger(self.name, level='warning', file_mode="w")
+            self.logger = Logger(self.name)
 
         self.model_type = None
         self.single_model_name = ''

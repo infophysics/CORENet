@@ -185,6 +185,94 @@ assert (len(gut_gauge_columns) == 4), "gut_gauge_columns wrong entries"
 
 common_columns = weak_soft_columns + weak_mass_columns + weak_measurements_columns + dm_channels_columns + gut_gauge_columns
 
+# here we have the specification of
+# different softsusy output values
+# and their corresponding block
+softsusy_physical_parameters = {
+    # parameter: block
+    "Au":   "au",
+    "Ac":   "au",
+    "At":   "au",
+    "Ad":   "ad",
+    "As":   "ad",
+    "Ab":   "ad",
+    "Ae":   "ae",
+    "Amu":  "ae",
+    "Atau": "ae",
+    "tan":  "hmix",
+    "g":    "gauge",
+    "g'":   "gauge",
+    "g3":   "gauge",
+    "M_1":  "msoft",
+    "M_2":  "msoft",
+    "M_3":  "msoft",
+    "mA^2": "hmix",
+    "mu":   "hmix",
+    "mH1^2": "msoft",
+    "mH2^2": "msoft",
+    "muR":  "msoft",
+    "mcR":  "msoft",
+    "mtR":  "msoft",
+    "mdR":  "msoft",
+    "msR":  "msoft",
+    "mbR":  "msoft",
+    "meR":  "msoft",
+    "mmuR": "msoft",
+    "mtauR": "msoft",
+    "mqL1": "msoft",
+    "mqL2": "msoft",
+    "mqL3": "msoft",
+    "meL":  "msoft",
+    "mmuL": "msoft",
+    "mtauL": "msoft",
+    "higgs": "hmix",
+    "Yt":   "yu",
+    "Yb":   "yd",
+    "Ytau": "ye",
+}
+# incidentally, all the weak
+# parameters are in the MASS block
+softsusy_weak_parameters = {
+    # parameter: block
+    "MW":   "MASS",
+    "h0":   "MASS",
+    "H0":   "MASS",
+    "A0":   "MASS",
+    "H+":   "MASS",
+    "~g":   "MASS",
+    "~neutralino(1)":   "MASS",
+    "~neutralino(2)":   "MASS",
+    "~neutralino(3)":   "MASS",
+    "~neutralino(4)":   "MASS",
+    "~chargino(1)":     "MASS",
+    "~chargino(2)":     "MASS",
+    "~d_L":  "MASS",
+    "~u_L":  "MASS",
+    "~s_L":  "MASS",
+    "~c_L":  "MASS",
+    "~b_1":  "MASS",
+    "~t_1":  "MASS",
+    "~e_L":  "MASS",
+    "~nue_L": "MASS",
+    "~mu_L": "MASS",
+    "~numu_L":   "MASS",
+    "~stau_1":   "MASS",
+    "~nu_tau_L":  "MASS",
+    "~d_R":  "MASS",
+    "~u_R":  "MASS",
+    "~s_R":  "MASS",
+    "~c_R":  "MASS",
+    "~b_2":  "MASS",
+    "~t_2":  "MASS",
+    "~e_R":  "MASS",
+    "~mu_R": "MASS",
+    "~stau_2":   "MASS",
+    "N_{1,1}":   "nmix",
+    "N_{1,2}":   "nmix",
+    "N_{1,3}":   "nmix",
+    "N_{1,4}":   "nmix",
+}
+
 
 def constraints_cmssm(X):
     # check if the relic density is saturated

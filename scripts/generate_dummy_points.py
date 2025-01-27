@@ -76,7 +76,9 @@ def generate_dummy_points(
     validity,
     num_samples,
     kernel,
-    bandwidth
+    bandwidth,
+    output_folder,
+    output_name,
 ):
     """Load in the input_file"""
     data = import_data_efficient(input_file, data_type)
@@ -109,8 +111,18 @@ def generate_dummy_points(
         bandwidth=bandwidth
     ).fit(data[:, :index].detach().numpy())
     output = torch.tensor(kde.sample(n_samples=num_samples).astype('float32'))
-    output = torch.hstack((output[:, :index], torch.zeros(num_samples, index), torch.rand(num_samples, 2))).numpy()
-    np.savetxt('generated_points.txt', output, delimiter=",")
+    weak_input = torch.rand((num_samples, 2), dtype=torch.float32)
+    output = torch.hstack((
+        output[:, :index],
+        torch.zeros(num_samples, index),
+        weak_input
+    )).numpy()
+    np.savetxt(f'{output_folder}/{output_name}_generated_points.txt', output, delimiter=",")
+    np.savez(
+        f'{output_folder}/{output_name}_generated_points_norm.npz',
+        minvec=minvec,
+        maxvec=maxvec
+    )
 
 
 if __name__ == "__main__":
@@ -150,6 +162,16 @@ if __name__ == "__main__":
         default=0.1,
         help="Bandwidth value for kernel"
     )
+    parser.add_argument(
+        "output_folder",
+        type=str,
+        help="Path to the output folder."
+    )
+    parser.add_argument(
+        "output_name",
+        type=str,
+        help="Name of the output file."
+    )
 
     args = parser.parse_args()
     generate_dummy_points(
@@ -158,5 +180,7 @@ if __name__ == "__main__":
         args.validity,
         args.num_samples,
         args.kernel,
-        args.bandwidth
+        args.bandwidth,
+        args.output_folder,
+        args.output_name
     )

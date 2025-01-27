@@ -54,6 +54,7 @@ setup(
     entry_points={
         'console_scripts': [
             'corenet = corenet.programs.run_corenet:run',
+            'mssm = corenet.programs.run_mssm:run'
         ],
     },
 )

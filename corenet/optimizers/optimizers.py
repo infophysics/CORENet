@@ -19,7 +19,7 @@ class Optimizer:
         meta:   dict = {}
     ):
         self.name = name + "_optimizer"
-        self.logger = Logger(self.name, file_mode='w')
+        self.logger = Logger(self.name)
         self.config = config
         self.meta = meta
 
