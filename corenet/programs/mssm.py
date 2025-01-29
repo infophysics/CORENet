@@ -728,19 +728,16 @@ class MSSM:
                 f"worker (gut_test): {self.rank}"
             )
             self.progress_bar.set_postfix_str(f"# Super Invalid: {super_invalids}")
-        self.comm.send({
-            'gut_test_output_susy_physical_params': gut_test_output_susy_physical_params,
-            'gut_test_output_susy_weak_params': gut_test_output_susy_weak_params,
-            'gut_test_output_micromegas_params': gut_test_output_micromegas_params,
-            'gut_test_output_gut_params': gut_test_output_gut_params,
-            'gut_test_output_constraints': gut_test_output_constraints,
-            'gut_test_susy_physical_params': gut_test_susy_physical_params,
-            'gut_test_susy_weak_params': gut_test_susy_weak_params,
-            'gut_test_micromegas_params': gut_test_micromegas_params,
-            'gut_test_gut_params': gut_test_gut_params,
-            'gut_test_constraints': gut_test_constraints,
-            'indices': indices
-        }, dest=0, tag=11)
+        self.gut_test_output_susy_physical_params = gut_test_output_susy_physical_params
+        self.gut_test_output_susy_weak_params = gut_test_output_susy_weak_params
+        self.gut_test_output_micromegas_params = gut_test_output_micromegas_params
+        self.gut_test_output_gut_params = gut_test_output_gut_params
+        self.gut_test_output_constraints = gut_test_output_constraints
+        self.gut_test_susy_physical_params = gut_test_susy_physical_params
+        self.gut_test_susy_weak_params = gut_test_susy_weak_params
+        self.gut_test_micromegas_params = gut_test_micromegas_params
+        self.gut_test_gut_params = gut_test_gut_params
+        self.gut_test_constraints = gut_test_constraints
 
     def run_softsusy(
         self,
@@ -869,9 +866,21 @@ class MSSM:
             data_dict['gut_test_output_gut_params'] = gut_test_output_gut_params
             data_dict['gut_test_output_constraints'] = gut_test_output_constraints
 
-            np.savez(self.mssm_folder + file_name, **data_dict)
+            np.savez(self.mssm_folder + 'evaluated_' + file_name, **data_dict)
         else:
-            pass
+            self.comm.send({
+                'gut_test_output_susy_physical_params': self.gut_test_output_susy_physical_params,
+                'gut_test_output_susy_weak_params': self.gut_test_output_susy_weak_params,
+                'gut_test_output_micromegas_params': self.gut_test_output_micromegas_params,
+                'gut_test_output_gut_params': self.gut_test_output_gut_params,
+                'gut_test_output_constraints': self.gut_test_output_constraints,
+                'gut_test_susy_physical_params': self.gut_test_susy_physical_params,
+                'gut_test_susy_weak_params': self.gut_test_susy_weak_params,
+                'gut_test_micromegas_params': self.gut_test_micromegas_params,
+                'gut_test_gut_params': self.gut_test_gut_params,
+                'gut_test_constraints': self.gut_test_constraints,
+                'indices': self.distributed_events['indices']
+            }, dest=0, tag=11)
 
     def run_end_of_mssm(self):
         """

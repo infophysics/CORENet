@@ -114,8 +114,8 @@ def generate_dummy_points(
     weak_input = torch.rand((num_samples, 2), dtype=torch.float32)
     output = torch.hstack((
         output[:, :index],
+        weak_input,
         torch.zeros(num_samples, index),
-        weak_input
     )).numpy()
     np.savetxt(f'{output_folder}/{output_name}_generated_points.txt', output, delimiter=",")
     np.savez(
