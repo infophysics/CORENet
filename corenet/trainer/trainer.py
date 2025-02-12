@@ -47,6 +47,9 @@ class Trainer:
         if "patience" not in self.config.keys():
             self.config["patience"] = 100
         self.patience = self.config["patience"]
+        if "sequence_training" not in self.config.keys():
+            self.config["sequence_training"] = True
+        self.sequence_training = self.config["sequence_training"]
         self.process_model()
         self.process_directories()
         self.process_criterion()
@@ -141,6 +144,12 @@ class Trainer:
         torch.autograd.set_detect_anomaly(True)
         early_stopping_loss = 10e9
         patience = 0
+        if self.sequence_training:
+            swae_to_core = 0
+            self.model.unfreeze_swae()
+            self.model.freeze_core()
+        else:
+            swae_to_core = 1
         # iterate over epochs
         for epoch in range(epochs):
             epoch_train_losses = {}
@@ -179,7 +188,14 @@ class Trainer:
                     )
                 else:
                     data['loss'].backward()
+                # if ii == 0:
+                #     for name, param in self.model.named_parameters():
+                #         if param.requires_grad:
+                #             print(f"{name}: Grad Norm = {param.grad.norm()}, {param.requires_grad}")
+                #         else:
+                #             print(f"{name}: {param.grad}")
                 self.optimizer.step()
+                self.meta["scheduler"].step()
                 if progress_bar:
                     training_loop.set_description(f"Training: Epoch [{epoch+1}/{epochs}]")
                     training_loop.set_postfix_str(f"loss={data['loss'].item():.2e}")
@@ -189,6 +205,7 @@ class Trainer:
                             epoch_train_losses[key] = []
                         epoch_train_losses[key].append(value.detach().cpu())
                         self.meta['tensorboard'].add_scalar(key + '_train', value, train_iteration)
+                self.meta['tensorboard'].add_scalar('lr', self.meta['scheduler'].get_last_lr()[0], train_iteration)
             for key, value in epoch_train_losses.items():
                 self.meta['tensorboard'].add_scalar(key + '_train_avg', np.mean(value), epoch)
             if not skip_metrics:
@@ -280,7 +297,16 @@ class Trainer:
                 patience = 0
                 early_stopping_loss = np.mean(epoch_val_losses['loss'])
             if patience > self.patience:
-                break
+                if swae_to_core:
+                    break
+                else:
+                    swae_to_core = 1
+                    patience = 0
+                    early_stopping_loss = 10e9
+                    self.model.freeze_swae()
+                    self.model.unfreeze_core()
+                    self.logger.info("SWAE training stopped, switching to CORE.")
+
         self.logger.info("training finished.")
         """
         Testing stage.

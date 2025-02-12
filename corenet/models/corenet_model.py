@@ -321,6 +321,38 @@ class CORENet(GenericModel):
         x = self.latent_dict['latent_layer'](x)
         return x
 
+    def freeze_swae(self):
+        """
+        Freezes the weights of the SWAE (encoder, latent space, and decoder)
+        while keeping CORENet (core_dict) trainable.
+        """
+        for param in self.encoder_dict.parameters():
+            param.requires_grad = False
+        for param in self.latent_dict.parameters():
+            param.requires_grad = False
+        for param in self.decoder_dict.parameters():
+            param.requires_grad = False
+        for param in self.output_dict.parameters():
+            param.requires_grad = False
+
+    def unfreeze_swae(self):
+        for param in self.encoder_dict.parameters():
+            param.requires_grad = True
+        for param in self.latent_dict.parameters():
+            param.requires_grad = True
+        for param in self.decoder_dict.parameters():
+            param.requires_grad = True
+        for param in self.output_dict.parameters():
+            param.requires_grad = True
+
+    def freeze_core(self):
+        for param in self.core_dict.parameters():
+            param.requires_grad = False
+
+    def unfreeze_core(self):
+        for param in self.core_dict.parameters():
+            param.requires_grad = True
+
     def save_model_architecture(self):
         """Create computation graph with torchviz"""
         x = {

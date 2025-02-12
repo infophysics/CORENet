@@ -6,6 +6,7 @@ from corenet.models import ModelHandler
 from corenet.module.generic_module import GenericModule
 from corenet.losses import LossHandler
 from corenet.optimizers import Optimizer
+from corenet.scheduler import Scheduler
 from corenet.metrics import MetricHandler
 from corenet.trainer import Trainer
 
@@ -42,6 +43,7 @@ class MachineLearningModule(GenericModule):
         self.meta['model'] = None
         self.meta['criterion'] = None
         self.meta['optimizer'] = None
+        self.meta['scheduler'] = None
         self.meta['metrics'] = None
         self.meta['trainer'] = None
         self.meta['model_analyzer'] = None
@@ -117,6 +119,24 @@ class MachineLearningModule(GenericModule):
             meta=self.meta,
         )
 
+    def parse_scheduler(
+        self,
+    ):
+        """
+        """
+        if self.mode == "linear_evaluation":
+            return
+        if "scheduler" not in self.config.keys():
+            self.logger.warn("no scheduler in config file.")
+            return
+        self.logger.info("configuring scheduler.")
+        scheduler_config = self.config['scheduler']
+        self.meta['scheduler'] = Scheduler(
+            self.name,
+            scheduler_config,
+            meta=self.meta,
+        )
+
     def parse_metrics(
         self,
     ):
@@ -177,6 +197,7 @@ class MachineLearningModule(GenericModule):
 
     def run_module(self):
         if self.mode == 'training':
+            self.meta['num_iterations'] = self.config['training']['epochs'] * self.meta['loader'].num_total_train
             self.run_training()
         elif self.mode == 'inference':
             self.run_inference()
@@ -187,6 +208,7 @@ class MachineLearningModule(GenericModule):
         self.parse_model()
         self.parse_loss()
         self.parse_optimizer()
+        self.parse_scheduler()
         self.parse_metrics()
         self.parse_training()
         self.module_data_product['predictions'] = self.meta['trainer'].train(

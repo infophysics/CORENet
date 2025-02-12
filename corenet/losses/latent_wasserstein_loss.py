@@ -17,6 +17,7 @@ class LatentWassersteinLoss(GenericLoss):
         alpha:          float = 0.0,
         latent_variables: list = [],
         num_projections: int = 1000,
+        losses: list = ['gut_test_wasserstein_loss', 'gut_true_wasserstein_loss', 'weak_test_wasserstein_loss'],
         meta:           dict = {}
     ):
         super(LatentWassersteinLoss, self).__init__(
@@ -25,6 +26,7 @@ class LatentWassersteinLoss(GenericLoss):
 
         self.latent_variables = latent_variables
         self.num_projections = num_projections
+        self.losses = losses
         self.distribution = generate_gaussian(dimension=len(self.latent_variables))
 
     def _loss(
@@ -114,4 +116,8 @@ class LatentWassersteinLoss(GenericLoss):
         data[self.name] = self.alpha * (
             data['gut_test_wasserstein_loss'] + data['gut_true_wasserstein_loss'] + data['weak_test_wasserstein_loss']
         )
+        total_loss = 0.0
+        for loss in self.losses:
+            total_loss += self.alpha * data[loss]
+        data[self.name] = total_loss
         return data
