@@ -41,6 +41,10 @@ def run():
         '-anomaly', dest='anomaly', default=False,
         help='enable anomaly detection in pytorch'
     )
+    parser.add_argument(
+        '-dataset_folder', dest='dataset_folder', default='',
+        help='custom dataset folder location'
+    )
     args = parser.parse_args()
     meta, module_handler = parse_command_line_config(args)
     module_handler.run_modules()

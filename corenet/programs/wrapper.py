@@ -1,5 +1,6 @@
 """
 """
+from pathlib import Path
 
 from corenet.utils.logger import Logger
 from corenet.utils.config import ConfigParser
@@ -23,7 +24,8 @@ class CORENetRunner:
         local_scratch:  str = './',
         local_corenet:     str = './',
         local_data:     str = './',
-        anomaly:        bool = False
+        anomaly:        bool = False,
+        dataset_folder: str = './'
     ):
         # set up directories
         self.config_file = config_file
@@ -32,6 +34,7 @@ class CORENetRunner:
         self.local_corenet = local_corenet
         self.local_data = local_data
         self.anomaly = anomaly
+        self.dataset_folder = dataset_folder
 
         if not os.path.isdir(self.local_scratch):
             self.local_scratch = './'
@@ -111,6 +114,26 @@ class CORENetRunner:
             'local_corenet_files': self.local_corenet_files,
             'local_data_files': self.local_data_files
         }
+
+        # Take inference config and copy it to the run directory with the right edits
+        if self.config["module"]["module_mode"][0] == "training":
+            config_parser = ConfigParser(self.local_corenet + '/config/inference.yaml')
+            inference_config = config_parser.data
+            inference_config["module"]["local_run"] = self.local_run
+            inference_config["dataset"]["norm_params"] = self.local_run + '/norm_params.npz'
+            inference_config["model"]["load_model"] = self.local_run + '/CORENet_trained_params.ckpt'
+            inference_config["model"]["model_config"] = self.local_run + '/CORENet_init.config'
+            config_parser.save_config(inference_config, self.local_run + '/inference.yaml')
+        else:
+            config_parser = ConfigParser(self.local_corenet + '/config/mssm.yaml')
+            mssm_config = config_parser.data
+            mssm_config["mssm"]["mssm_folder"] = self.local_run
+            mssm_config["mssm"]["mssm_files"][0] = self.local_run + self.run_name + ".npz"
+            config_parser.save_config(mssm_config, self.local_run + '/mssm.yaml')
+
+        if self.dataset_folder != "":
+            self.config["dataset"]["dataset_folder"] = self.dataset_folder
+
         # set up tensorboard
         self.meta['tensorboard_dir'] = self.meta['run_directory']
         self.meta['tensorboard'] = SummaryWriter(
@@ -209,12 +232,13 @@ def parse_command_line_config(
             if "LOCAL_CORENET" in os.environ:
                 params.local_corenet = os.environ["LOCAL_CORENET"]
             else:
-                params.local_corenet = './'
+                params.local_corenet = str(Path(__file__).resolve().parent)
+
     else:
         if "LOCAL_CORENET" in os.environ:
             params.local_corenet = os.environ["LOCAL_CORENET"]
         else:
-            params.local_corenet = './'
+            params.local_corenet = str(Path(__file__).resolve().parent)
 
     # set up local data directory
     if params.local_data is not None:
@@ -235,6 +259,7 @@ def parse_command_line_config(
         params.local_scratch,
         params.local_corenet,
         params.local_data,
-        params.anomaly
+        params.anomaly,
+        params.dataset_folder
     )
     return corenet_runner.get_products()

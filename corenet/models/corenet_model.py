@@ -111,6 +111,8 @@ class CORENet(GenericModel):
         self.logger.info(f"Attempting to build corenet architecture using config: {self.config}")
         if 'mix_gradients' not in self.config.keys():
             self.config['mix_gradients'] = False
+        if 'use_weak_values' not in self.config.keys():
+            self.config['use_weak_values'] = False
         if 'chuncc' not in self.config.keys():
             self.config['chuncc'] = False
 
@@ -250,25 +252,37 @@ class CORENet(GenericModel):
 
         """Grab a copy of the latent output for gut_test"""
         gut_test_latent_copy = gut_test_latent.clone()
+        gut_true_latent_copy = gut_true_latent.clone()
 
         """Determine whether we want to mix the gradients"""
         if not self.config['mix_gradients']:
             gut_test_latent_copy = gut_test_latent_copy.detach()
+            gut_true_latent_copy = gut_true_latent_copy.detach()
 
         """Form weak input"""
-        weak_test_latent = torch.cat(
-            (data['weak_test'].to(self.device), gut_test_latent_copy),
-            dim=1
-        )
+        if self.config["use_weak_values"]:
+            weak_test_latent = torch.cat(
+                (data['weak_test'].to(self.device), gut_test_latent_copy),
+                dim=1
+            )
+            weak_true_latent = torch.cat(
+                (data['weak_test'].to(self.device), gut_true_latent_copy),
+                dim=1
+            )
+        else:
+            weak_test_latent = gut_test_latent_copy
+            weak_true_latent = gut_true_latent_copy
 
         """Apply the CORENet to the weak input"""
         for layer in self.core_dict.values():
             weak_test_latent = layer(weak_test_latent)
+            weak_true_latent = layer(weak_true_latent)
 
         """Save the latent values"""
         data['gut_test_latent'] = gut_test_latent
         data['gut_true_latent'] = gut_true_latent
         data['weak_test_latent'] = weak_test_latent
+        data['weak_true_latent'] = weak_true_latent
 
         gut_test = gut_test_latent
         gut_true = gut_true_latent

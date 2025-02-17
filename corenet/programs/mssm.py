@@ -751,10 +751,9 @@ class MSSM:
         # create the input file
         if self.param_space == 'cmssm':
             gut_input = gut_input * (self.maxvec[:5] - self.minvec[:5]) + self.minvec[:5]
-            if gut_input[4] < 0.0:
-                gut_input[4] = -1.0
-            else:
-                gut_input[4] = 1.0
+            negative_mu = (gut_input[:, 4] < 0.0)
+            gut_input[:, 4][negative_mu] = -1.0
+            gut_input[:, 4][~negative_mu] = 1.0
             tmp_input = sugra_input(
                 m_scalar=gut_input[0],
                 m_gaugino=gut_input[1],

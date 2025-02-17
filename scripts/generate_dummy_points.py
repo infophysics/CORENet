@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import os
+from scipy.spatial import KDTree
+
 import pandas as pd
 import argparse
 from sklearn.neighbors import KernelDensity
@@ -111,7 +113,18 @@ def generate_dummy_points(
         bandwidth=bandwidth
     ).fit(data[:, :index].detach().numpy())
     output = torch.tensor(kde.sample(n_samples=num_samples).astype('float32'))
-    weak_input = torch.rand((num_samples, 2), dtype=torch.float32)
+
+    # Convert data to NumPy for KDTree
+    training_gut_values = data[:, :5].numpy()  # Extract first 5 columns (GUT values)
+
+    # Build KDTree
+    gut_tree = KDTree(training_gut_values)
+
+    # Find closest training GUT point for each sampled output
+    _, nearest_idx = gut_tree.query(output.numpy())
+    # weak_input = torch.rand((num_samples, 2), dtype=torch.float32)
+    weak_input = data[nearest_idx, 5:7]  # Assuming weak values are in columns 5-7
+    # weak_input = data[:, [5, 7]]
     output = torch.hstack((
         output[:, :index],
         weak_input,

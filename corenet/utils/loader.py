@@ -301,10 +301,10 @@ class Loader:
         )
         self.inference_loader = DataLoader(
             self.meta['dataset'],
-            batch_size=1,
+            batch_size=self.batch_size,
             pin_memory=True,
             num_workers=self.num_workers,
-            shuffle=True,
+            shuffle=False,
             collate_fn=self.collate_fn
         )
         self.mc_truth_loader = DataLoader(

@@ -14,7 +14,13 @@ class L2GUTLoss(GenericLoss):
         self,
         name:           str = 'l2_gut_loss',
         alpha:          float = 0.0,
-        losses:         list = ['gut_test_l2_loss, gut_true_l2_loss, weak_test_l2_loss'],
+        losses:         list = [
+            'gut_test_l2_loss',
+            'gut_true_l2_loss',
+            'weak_test_l2_loss',
+            'weak_latent_l2_loss',
+            'gut_true_latent_l2_loss'
+        ],
         meta:           dict = {}
     ):
         super(L2GUTLoss, self).__init__(
@@ -43,6 +49,10 @@ class L2GUTLoss(GenericLoss):
         data['weak_latent_l2_loss'] = self.l2_loss(
             data['gut_true_latent'].to(self.device),
             data['weak_test_latent'].to(self.device)
+        )
+        data['gut_true_latent_l2_loss'] = self.l2_loss(
+            data['gut_true_latent'].to(self.device),
+            data['weak_true_latent'].to(self.device)
         )
         total_loss = 0.0
         for loss in self.losses:
